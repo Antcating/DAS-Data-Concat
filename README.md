@@ -71,11 +71,16 @@ Before running the project you have to configure parameters in the `config.ini` 
 
 To run the project, you have to provide `downsampled_reference.h5`, which has to be placed in the same directory as `concat.py`. From `downsampled_reference.h5` the program will calculate expected `DX`, `SPS`, and matrix `shape` for checking h5 files in the provided `{LOCAL/NAS}PATH/{date}`,
 
+
 **Running the project**
+
+
 
 ```
 python concat.py
 ```
+
+> Important note: The concatenation program won't process directory named by today's date in format `YYYYMMDD` according to UTC to prevent processing directories which are in use by DAS Client!  
 
 If project runs successfully, the concatenation has been done successfully. Otherwise the exception would be raised and (to be done) notification would be sent to the provided email.  
 
