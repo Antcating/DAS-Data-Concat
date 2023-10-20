@@ -1,8 +1,8 @@
-# FEBUS A1 Data Concat
+# FEBUS A1 Data Receiver
 
 ## Table of Contents
 
-- [FEBUS A1 Data Concat](#febus-a1-data-concat)
+- [FEBUS A1 Data Receiver](#febus-a1-data-receiver)
   - [Table of Contents](#table-of-contents)
   - [About ](#about-)
   - [Getting Started ](#getting-started-)
@@ -14,7 +14,7 @@
 
 ## About <a name = "about"></a>
 
-FEBUS A1 Data Concat concatenates data from FEBUS A1 system (to be done) once a day. It allows easy configuration for needs of the different systems (different packet length). 
+FEBUS A1 Data Receiver - concatenates data from FEBUS A1 system (to be done) once a day. It allows easy configuration for needs of the different systems (different packet length). 
 
 ## Getting Started <a name = "getting_started"></a>
 
@@ -73,8 +73,6 @@ To run the project, you have to provide `downsampled_reference.h5`, which has to
 
 
 **Running the project**
-
-
 
 ```
 python concat.py
