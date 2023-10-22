@@ -11,9 +11,8 @@
       - [Necessary configurations](#necessary-configurations)
       - [Additional configurations](#additional-configurations)
   - [Usage ](#usage-)
-    - [Running the project](#running-the-project)
-      - [One-time use through Python](#one-time-use-through-python)
-      - [Scheduling on UNIX systems](#scheduling-on-unix-systems)
+    - [Manual use through Python](#manual-use-through-python)
+    - [Scheduling on UNIX systems](#scheduling-on-unix-systems)
 
 ## About <a name = "about"></a>
 
@@ -74,10 +73,7 @@ Before running the project you have to configure parameters in the `config.ini` 
 
 To run the project, you have to provide `downsampled_reference.h5`, which has to be placed in the same directory as `concat.py`. From `downsampled_reference.h5` the program will calculate expected `DX`, `SPS`, and matrix `shape` for checking h5 files in the provided `{LOCAL/NAS}PATH/{date}`,
 
-
-### Running the project
-
-#### One-time use through Python
+### Manual use through Python
 ```
 python concat.py
 ```
@@ -88,7 +84,7 @@ If project runs successfully, the concatenation has been done successfully. Othe
 
 Logging of all actions is done to 3 locations: `{LOCAL/NAS}PATH/{date}/log` with `DEBUG` level, `{LOCAL/NAS}PATH_final/log` with `WARNING` level and to console with `INFO` level.
 
-#### Scheduling on UNIX systems
+### Scheduling on UNIX systems
 
 This project contains `concat.sh` file, that is used as a wrapper for a `concat.py` file. 
 
