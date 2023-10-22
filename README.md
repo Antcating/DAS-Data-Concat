@@ -13,7 +13,7 @@
   - [Usage ](#usage-)
     - [Manual use through Python](#manual-use-through-python)
     - [Scheduling on UNIX systems](#scheduling-on-unix-systems)
-      - [Example:](#example)
+      - [Example using systemd:](#example-using-systemd)
 
 ## About <a name = "about"></a>
 
@@ -105,11 +105,13 @@ pushd PROJECT_PATH
 [...]
 ```
 
+
+
+#### Example using systemd: 
+
 For the scheduling could be used any scheduling UNIX software. In this example I'll you **systemd Timers** (systemd is packed with most of the popular Linux distros nowadays).
 
 Both files in the provided example are located in `systemd` directory of the project.
-
-#### Example: 
 
 **Create concatenation systemd service and timer.**
 
