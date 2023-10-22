@@ -11,10 +11,13 @@
       - [Necessary configurations](#necessary-configurations)
       - [Additional configurations](#additional-configurations)
   - [Usage ](#usage-)
+    - [Running the project](#running-the-project)
+      - [One-time use through Python](#one-time-use-through-python)
+      - [Scheduling on UNIX systems](#scheduling-on-unix-systems)
 
 ## About <a name = "about"></a>
 
-FEBUS A1 Data Receiver - concatenates data from FEBUS A1 system (to be done) once a day. It allows easy configuration for needs of the different systems (different packet length). 
+FEBUS A1 Data Receiver - concatenates data from FEBUS A1 system once a day. It allows easy configuration for needs of the different systems (different packet length). 
 
 ## Getting Started <a name = "getting_started"></a>
 
@@ -72,8 +75,9 @@ Before running the project you have to configure parameters in the `config.ini` 
 To run the project, you have to provide `downsampled_reference.h5`, which has to be placed in the same directory as `concat.py`. From `downsampled_reference.h5` the program will calculate expected `DX`, `SPS`, and matrix `shape` for checking h5 files in the provided `{LOCAL/NAS}PATH/{date}`,
 
 
-**Running the project**
+### Running the project
 
+#### One-time use through Python
 ```
 python concat.py
 ```
@@ -83,3 +87,74 @@ python concat.py
 If project runs successfully, the concatenation has been done successfully. Otherwise the exception would be raised and (to be done) notification would be sent to the provided email.  
 
 Logging of all actions is done to 3 locations: `{LOCAL/NAS}PATH/{date}/log` with `DEBUG` level, `{LOCAL/NAS}PATH_final/log` with `WARNING` level and to console with `INFO` level.
+
+#### Scheduling on UNIX systems
+
+This project contains `concat.sh` file, that is used as a wrapper for a `concat.py` file. 
+
+Give `concat.sh` file executable permissions:
+
+```
+chmod u+x concat.sh
+```
+
+Before using it, you have to configure it by passing into it the **absolute** `PROJECT_PATH` to the project directory:
+
+> concat.sh:
+```
+[...]
+pushd PROJECT_PATH
+[...]
+```
+
+For the scheduling could be used any scheduling UNIX software. In this example I'll you **systemd Timers** (systemd is packed with most of the popular Linux distros nowadays).
+
+Create concatenation systemd service and timer:
+
+Service:
+
+> /etc/systemd/system/FebusConcatDaily.service
+
+```
+[Unit]
+Description=Run concatenation of FEBUS data
+
+[Service]
+ExecStart=/bin/bash {PROJECT_PATH}/concat.sh
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Timer:
+
+> /etc/systemd/system/FebusConcatDaily.timer
+```
+[Unit]
+Description=Run concatenation of FEBUS data daily at 3am.
+
+[Timer]
+OnCalendar=*-*-* 3:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+> Note: We used `Persistent=true` to enable the timer to start the scheduled concatenation even if we lost power on the machine during the expected time period
+
+Using `systemctl` activate timer:
+
+```
+sudo systemctl enable FebusConcatDaily.timer
+sudo systemctl daemon-reload
+sudo systemctl start FebusConcatDaily.timer
+```
+
+Hooray! Timer is set up and will automatically run concatenation once a day. To check that timer was successfully activated we can run: 
+
+```
+systemctl list-timers
+```
+
+Among the listed timers we would be able to see `FebusConcatDaily.timer`, which activates `FebusConcatDaily.service`
