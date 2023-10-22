@@ -73,6 +73,8 @@ Before running the project you have to configure parameters in the `config.ini` 
 
 To run the project, you have to provide `downsampled_reference.h5`, which has to be placed in the same directory as `concat.py`. From `downsampled_reference.h5` the program will calculate expected `DX`, `SPS`, and matrix `shape` for checking h5 files in the provided `{LOCAL/NAS}PATH/{date}`,
 
+Logging of all actions is done to 3 locations: `{LOCAL/NAS}PATH/{date}/log` with `DEBUG` level, `{LOCAL/NAS}PATH_final/log` with `WARNING` level and to console with `INFO` level.
+
 ### Manual use through Python
 ```
 python concat.py
@@ -82,7 +84,6 @@ python concat.py
 
 If project runs successfully, the concatenation has been done successfully. Otherwise the exception would be raised and (to be done) notification would be sent to the provided email.  
 
-Logging of all actions is done to 3 locations: `{LOCAL/NAS}PATH/{date}/log` with `DEBUG` level, `{LOCAL/NAS}PATH_final/log` with `WARNING` level and to console with `INFO` level.
 
 ### Scheduling on UNIX systems
 
