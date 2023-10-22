@@ -13,6 +13,7 @@
   - [Usage ](#usage-)
     - [Manual use through Python](#manual-use-through-python)
     - [Scheduling on UNIX systems](#scheduling-on-unix-systems)
+      - [Example:](#example)
 
 ## About <a name = "about"></a>
 
@@ -106,7 +107,11 @@ pushd PROJECT_PATH
 
 For the scheduling could be used any scheduling UNIX software. In this example I'll you **systemd Timers** (systemd is packed with most of the popular Linux distros nowadays).
 
-Create concatenation systemd service and timer. Both files in the provided example are located in `systemd` directory of the project. 
+Both files in the provided example are located in `systemd` directory of the project.
+
+#### Example: 
+
+**Create concatenation systemd service and timer.**
 
 Service:
 
@@ -140,7 +145,7 @@ WantedBy=timers.target
 
 > Note: We used `Persistent=true` to enable the timer to start the scheduled concatenation even if we lost power on the machine during the expected time period
 
-Using `systemctl` activate timer:
+**Using `systemctl` activate timer:**
 
 ```
 sudo systemctl enable FebusConcatDaily.timer
