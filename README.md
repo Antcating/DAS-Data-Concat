@@ -106,7 +106,7 @@ pushd PROJECT_PATH
 
 For the scheduling could be used any scheduling UNIX software. In this example I'll you **systemd Timers** (systemd is packed with most of the popular Linux distros nowadays).
 
-Create concatenation systemd service and timer:
+Create concatenation systemd service and timer. Both files in the provided example are located in `systemd` directory of the project. 
 
 Service:
 
