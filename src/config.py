@@ -1,5 +1,5 @@
 import configparser
-import os
+from os.path import isdir
 
 config = configparser.ConfigParser()
 config.read("config.ini")
@@ -14,11 +14,15 @@ NASPATH_final = config["PATH"]["NASPATH_final"]
 TIME_DIFF_THRESHOLD = int(config["CONSTANTS"]["TIME_DIFF_THRESHOLD"])
 DATA_LOSE_THRESHOLD = int(config["CONSTANTS"]["DATA_LOSE_THRESHOLD"])
 
-if os.path.isdir(NASPATH):
+if isdir(NASPATH):
     PATH = NASPATH
-else:
+elif isdir(LOCALPATH):
     PATH = LOCALPATH
-if os.path.isdir(NASPATH_final):
+else: 
+    raise Exception('PATH is not accessible!')
+if isdir(NASPATH_final):
     SAVE_PATH = NASPATH_final
-else:
+elif isdir(LOCALPATH_final):    
     SAVE_PATH = LOCALPATH_final
+else:
+    raise Exception('SAVE_PATH is not accessible!')
