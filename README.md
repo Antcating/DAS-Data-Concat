@@ -68,8 +68,6 @@ Before running the project you have to configure parameters in the `config.ini` 
 
 `DATA_LOSE_THRESHOLD` - minimal time threshold which indicates unrecoverable loss of data. By default set to 5 (max difference between packets without intersection + 1).
 
-`CONCAT_TIME` - defines size of chunks (in seconds) of the concatenated packages. By default set to 20.
-
 ## Usage <a name = "usage"></a>
 
 To run the project, you have to provide `downsampled_reference.h5`, which has to be placed in the same directory as `concat.py`. From `downsampled_reference.h5` the program will calculate expected `DX`, `SPS`, and matrix `shape` for checking h5 files in the provided `{LOCAL/NAS}PATH/{date}`,
@@ -79,7 +77,7 @@ Logging of all actions is done to 3 locations: `{LOCAL/NAS}PATH/{date}/log` with
 > Important note: The concatenation program won't process directory named by today's date in format `YYYYMMDD` according to UTC to prevent processing directories which are in use by DAS Client!  
 ### Manual use through Python
 ```
-python concat.py
+python src/concat.py
 ```
 
 
