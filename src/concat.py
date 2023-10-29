@@ -3,24 +3,23 @@ import h5py
 import datetime
 import numpy as np
 
-from config import PATH, SAVE_PATH, TIME_DIFF_THRESHOLD, CONCAT_TIME
+from config import PATH, SAVE_PATH, TIME_DIFF_THRESHOLD, CONCAT_TIME, UNIT_SIZE
 from hdf import H5_FILE
 from logger import set_console_logger, set_file_logger, log
 
 # ---
 
-
 # Already correctly downsampled file for reference
 referenceFile = h5py.File("downsampled_reference.h5")
 TimeSamples, SpaceSamples = referenceFile["data_down"].shape
 
-UnitSizeSample = referenceFile.attrs["unit_size"]
-CHUNK_SIZE = int(CONCAT_TIME / (UnitSizeSample / 2))
+CHUNK_SIZE = int(CONCAT_TIME / (UNIT_SIZE / 2))
 
 # *important* today's date according to UTC
 today = datetime.datetime.now(tz=datetime.UTC)
 date_list = [str(x) for x in [today.year, today.month, today.day]]
 TODAY_DATE_STR = "".join(date_list)
+
 
 def get_dirs(path: str) -> list:
     """Returns dirs in path except dir named by today's date in format YYYYMMDD
@@ -53,7 +52,7 @@ def get_h5_files(path: str) -> list:
 
 
 def require_h5(working_dir: str, chunk_time: float) -> h5py.Dataset:
-    """Creates h5 file with attrs (if necessary)
+    """Creates h5 file (if necessary)
 
     Args:
         working_dir (str): Name of the directory files are located at (for name of the new file)
@@ -71,15 +70,8 @@ def require_h5(working_dir: str, chunk_time: float) -> h5py.Dataset:
         chunks=True,
         dtype=np.float32,
     )
-    # Add attrs from reference h5 file
-    for key in [
-        key
-        for key in referenceFile.attrs.keys()
-        if key not in ["packet_time", "save_time"]
-    ]:
-        file.attrs[key] = referenceFile.attrs[key]
-    return dset
 
+    return dset
 
 def calculate_chunk_offset(total_unit_size: int):
     return (total_unit_size // CONCAT_TIME) * CONCAT_TIME
@@ -93,7 +85,9 @@ def concat_to_chunk_by_time(
     concat_unit_size: int,
 ):
     def concat_h5(dset_origin: h5py.Dataset, dset_destination: h5py.Dataset):
-        dset_destination.resize(dset_destination.shape[0] + dset_origin.shape[0], axis=0)
+        dset_destination.resize(
+            dset_destination.shape[0] + dset_origin.shape[0], axis=0
+        )
         dset_destination[-dset_origin.shape[0] :] = dset_origin[()]
 
         return dset_destination
@@ -128,7 +122,7 @@ def concat_to_chunk_by_time(
             dset_concat = concat_h5(
                 dset_origin=file.dset_carry, dset_destination=dset_concat
             )
-            total_unit_size += int(file.attrs.unit_size / 2)
+            total_unit_size += int(UNIT_SIZE / 2)
 
     return total_unit_size
 
@@ -146,7 +140,7 @@ def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
         total_unit_size = int(total_unit_size)
 
         file_names_tbd = file_names[file_names.index(last_file) + 1 :].copy()
-        last_timestamp = h5py.File(path_dir + last_file).attrs["packet_time"]
+        last_timestamp = float(last_file.split('_')[-1].rsplit('.', maxsplit=1)[0])
     else:
         file_names_tbd: list[str] = file_names.copy()
         # Init values
@@ -187,7 +181,6 @@ def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
         elif major is True:
             log.info(f"{curr_dir} | Using major file: {major_file_name}")
 
-
         # if end of the chunk is half of the packet and is major or minor after major was skipped:
         # Split and take first half of the packet
         if (major or reason == "missing") and CONCAT_TIME - (
@@ -199,13 +192,13 @@ def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
             # Creating carry to use in the next chunk
             file.dset_carry = file.dset[split_offset:, :]
 
-            concat_unit_size = file.attrs.unit_size / 2  # 2
+            concat_unit_size = UNIT_SIZE / 2  # 2
         else:
-            if file.attrs.packet_time - last_timestamp < TIME_DIFF_THRESHOLD:
+            if file.packet_time - last_timestamp < TIME_DIFF_THRESHOLD:
                 file.dset_split = file.dset[int(file.dset.shape[0] / 2) :, :]
-                concat_unit_size = file.attrs.unit_size / 2  # 2
+                concat_unit_size = UNIT_SIZE / 2  # 2
             else:
-                concat_unit_size = file.attrs.unit_size  # 4
+                concat_unit_size = UNIT_SIZE  # 4
 
         # Concatenation if OK
         total_unit_size = concat_to_chunk_by_time(
@@ -225,7 +218,7 @@ def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
             if last_major_status is False:
                 major_file_names_tbd.pop()
 
-        last_timestamp = file.attrs.packet_time
+        last_timestamp = file.packet_time
         last_major_status = major
 
         with open(path_dir + ".last", "w") as status_file:
@@ -255,6 +248,7 @@ def main():
         else:
             # unused
             log.critical(f"{dir} | Concatenation was not finished due to error")
+
 
 if __name__ == "__main__":
     main()
