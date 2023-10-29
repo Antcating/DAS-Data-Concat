@@ -1,15 +1,41 @@
-import h5py
 import os
+import h5py
+import datetime
+import numpy as np
 
-from hdf2mseed import HDF2MSEED
+from config import PATH, SAVE_PATH, TIME_DIFF_THRESHOLD, CONCAT_TIME
 from hdf import H5_FILE
-from config import PATH, SAVE_PATH, TIME_DIFF_THRESHOLD
+from logger import set_console_logger, set_file_logger, log
 
-from logger import log, set_file_logger, set_console_logger
+# ---
 
+
+# Already correctly downsampled file for reference
+referenceFile = h5py.File("downsampled_reference.h5")
+TimeSamples, SpaceSamples = referenceFile["data_down"].shape
+
+UnitSizeSample = referenceFile.attrs["unit_size"]
+CHUNK_SIZE = int(CONCAT_TIME / (UnitSizeSample / 2))
+
+# *important* today's date according to UTC
+today = datetime.datetime.now(tz=datetime.UTC)
+date_list = [str(x) for x in [today.year, today.month, today.day]]
+TODAY_DATE_STR = "".join(date_list)
 
 def get_dirs(path: str) -> list:
-    dirs = [dir for dir in os.listdir(PATH) if os.path.isdir(path + dir)]
+    """Returns dirs in path except dir named by today's date in format YYYYMMDD
+
+    Args:
+        path (str): path to dir to scan to dirs
+
+    Returns:
+        list: list of dirs in the path except dir named by today's date in format YYYYMMDD
+    """
+    dirs = [
+        dir
+        for dir in os.listdir(path)
+        if os.path.isdir(path + dir) and dir != TODAY_DATE_STR
+    ]
     return dirs
 
 
@@ -26,110 +52,191 @@ def get_h5_files(path: str) -> list:
     return file_names
 
 
-def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
-    """Concatenates h5 files to one file
+def require_h5(working_dir: str, chunk_time: float) -> h5py.Dataset:
+    """Creates h5 file with attrs (if necessary)
 
     Args:
-        file_names (list): h5 files for concatenation
+        working_dir (str): Name of the directory files are located at (for name of the new file)
+        chunk_time (float): time of the necessary chunk
 
     Returns:
-        bool: Returns Status
+        h5py.Dataset: Returns dataset of the created h5 file
     """
-    m2mseed = HDF2MSEED(stations=1667, SPS=100, outpath=SAVE_PATH)
-    path_dir = PATH + curr_dir + "/"
-    file_names = get_h5_files(path_dir)
 
-    # Staring from the last saved if file .last exists in the {date} directory
+    file = h5py.File(SAVE_PATH + working_dir + "_" + str(chunk_time) + ".h5", "a")
+    dset = file.require_dataset(
+        "data_down",
+        (0, SpaceSamples),
+        maxshape=(None, SpaceSamples),
+        chunks=True,
+        dtype=np.float32,
+    )
+    # Add attrs from reference h5 file
+    for key in [
+        key
+        for key in referenceFile.attrs.keys()
+        if key not in ["packet_time", "save_time"]
+    ]:
+        file.attrs[key] = referenceFile.attrs[key]
+    return dset
+
+
+def calculate_chunk_offset(total_unit_size: int):
+    return (total_unit_size // CONCAT_TIME) * CONCAT_TIME
+
+
+def concat_to_chunk_by_time(
+    file: H5_FILE,
+    total_unit_size: int,
+    start_chunk_time: float,
+    curr_dir: str,
+    concat_unit_size: int,
+):
+    def concat_h5(dset_origin: h5py.Dataset, dset_destination: h5py.Dataset):
+        dset_destination.resize(dset_destination.shape[0] + dset_origin.shape[0], axis=0)
+        dset_destination[-dset_origin.shape[0] :] = dset_origin[()]
+
+        return dset_destination
+
+    chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
+    file_concat = h5py.File(SAVE_PATH + curr_dir + "_" + str(chunk_time) + ".h5", "a")
+    dset_concat = file_concat["data_down"]
+
+    log.debug(f"Concatenating {file.file_name}")
+    if file.dset_split is not None:
+        dset_concat = concat_h5(
+            dset_origin=file.dset_split, dset_destination=dset_concat
+        )
+    else:
+        dset_concat = concat_h5(dset_origin=file.dset, dset_destination=dset_concat)
+
+    total_unit_size += int(concat_unit_size)
+
+    log.debug(f"Concat has shape:  {dset_concat.shape}")
+
+    # Flip to next chunk
+    if total_unit_size % CONCAT_TIME == 0:
+        log.info(
+            f"{curr_dir} | Final shape: {h5py.File(SAVE_PATH + curr_dir + '_' + str(chunk_time) + '.h5')['data_down'].shape}"
+        )
+        # Recalculate new chunk time
+        chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
+        # Create new h5 chunk file
+        dset_concat = require_h5(curr_dir, chunk_time)
+        if file.dset_carry is not None:
+            log.info("Carry has been created and used in the next chunk")
+            dset_concat = concat_h5(
+                dset_origin=file.dset_carry, dset_destination=dset_concat
+            )
+            total_unit_size += int(file.attrs.unit_size / 2)
+
+    return total_unit_size
+
+
+def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
+    # TODO: add annotation for function
+    path_dir: str = PATH + curr_dir + "/"
+    file_names: list = get_h5_files(path_dir)
+    # Staring from the last saved
     if os.path.isfile(path_dir + ".last"):
-        last_file = open(path_dir + ".last", "r").read()
+        start_chunk_time, last_file, total_unit_size = (
+            open(path_dir + ".last", "r").read().split(";")
+        )
+        start_chunk_time = float(start_chunk_time)
+        total_unit_size = int(total_unit_size)
+
         file_names_tbd = file_names[file_names.index(last_file) + 1 :].copy()
         last_timestamp = h5py.File(path_dir + last_file).attrs["packet_time"]
     else:
-        file_names_tbd = file_names.copy()
-        last_timestamp = 0
+        file_names_tbd: list[str] = file_names.copy()
+        # Init values
+        last_timestamp: int = 0
+        total_unit_size: int = 0
+        start_chunk_time: float = float(
+            file_names_tbd[0].split("_")[-1].rsplit(".", 1)[0]
+        )
 
+    chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
     last_major_status = None
 
-    # Creating major and minor lists in reverse order (FIFO)
-    # Major and Minor lists has step of full {unit_size} seconds, so if it is possible
-    # script will use only major list to reduce computations
     major_file_names_tbd = file_names_tbd[::2][::-1]
     minor_file_names_tbd = file_names_tbd[1::2][::-1]
+    # Create empty file for concat
+    require_h5(curr_dir, chunk_time)
 
     while len(major_file_names_tbd) > 0 or len(minor_file_names_tbd) > 0:
         if len(major_file_names_tbd) > 0:
-            # Trying to use file from major list
             major_file_name = major_file_names_tbd[-1]
-
-            msg = f"{curr_dir} | Trying to use major file: {major_file_name}"
-            log.info(msg)
-
             file = H5_FILE(file_dir=curr_dir, file_name=major_file_name)
-            major_status = file.check_h5(last_timestamp=last_timestamp)
+            major, reason = file.check_h5(last_timestamp=last_timestamp)
         else:
-            # Major list is over, so we have to use minor
-            major_status = False
+            major = False
 
-        if major_status is False:
-            # Trying to use file from minor list
+        if major is False:
             minor_file_name = minor_file_names_tbd[-1]
 
-            msg = f"{curr_dir} | Trying to use minor file: {minor_file_name}"
+            msg = f"{curr_dir} | Using minor file: {minor_file_name}"
             log.info(msg)
 
             file = H5_FILE(file_dir=curr_dir, file_name=minor_file_name)
-            minor_status = file.check_h5(last_timestamp=last_timestamp)
+            minor, reason = file.check_h5(last_timestamp=last_timestamp)
 
-        if major_status is False and minor_status is False:
-            # If both minor and major files failed checks,
-            # we cannot proceed with concat, so raise exception
-            raise Exception("DATA IS CORRUPTED IN THE UNRECOVERABLE WAY")
+            # We tested both major and minor files. Both corrupted in some way, so we raise the exception!
+            if minor is False:
+                raise Exception("DATA IS CORRUPTED IN THE UNRECOVERABLE WAY")
+        elif major is True:
+            log.info(f"{curr_dir} | Using major file: {major_file_name}")
 
-        # Can be used to tweak time if mseed goes crazy
-        # epsilon = 0.1
-        # if abs(file.attrs.packet_time - last_timestamp - 2) < epsilon:
-        #     print('used')
-        #     file.attrs.packet_time = last_timestamp + 2
 
-        # If we getting packets at rate less than TIME_THRESHOLD, take whole packet
-        # else take only second half
+        # if end of the chunk is half of the packet and is major or minor after major was skipped:
+        # Split and take first half of the packet
+        if (major or reason == "missing") and CONCAT_TIME - (
+            (CONCAT_TIME + total_unit_size) % CONCAT_TIME
+        ) < TIME_DIFF_THRESHOLD:
+            split_offset = int(file.dset.shape[0] / 2)
+
+            file.dset_split = file.dset[:split_offset, :]
+            # Creating carry to use in the next chunk
+            file.dset_carry = file.dset[split_offset:, :]
+
+            concat_unit_size = file.attrs.unit_size / 2  # 2
+        else:
+            if file.attrs.packet_time - last_timestamp < TIME_DIFF_THRESHOLD:
+                file.dset_split = file.dset[int(file.dset.shape[0] / 2) :, :]
+                concat_unit_size = file.attrs.unit_size / 2  # 2
+            else:
+                concat_unit_size = file.attrs.unit_size  # 4
 
         # Concatenation if OK
-        if file.attrs.packet_time - last_timestamp > TIME_DIFF_THRESHOLD:
-            # In mseed we used matrix in shape ({unit_size}/2, {channels}),
-            # so we have to feed only half of the data at the time to avoid
-            # creation additional traces in mseed
-            m = file.dset[: int(file.dset.shape[0] / 2), :]
-            m2mseed.save_matrix(m, file.attrs.packet_time, curr_dir)
-            m = file.dset[int(file.dset.shape[0] / 2) :, :]
-            m2mseed.save_matrix(m, file.attrs.packet_time + 2, curr_dir)
-
-        else:
-            # If we using minor after major or vise versa, we have to
-            # avoid overlaps, so if time diff smaller than {TIME_DIFF_THRESHOLD},
-            # we use only second half of the data
-            m = file.dset[int(file.dset.shape[0] / 2) :, :]
-            m2mseed.save_matrix(m, file.attrs.packet_time + 2, curr_dir)
-
+        total_unit_size = concat_to_chunk_by_time(
+            file=file,
+            total_unit_size=total_unit_size,
+            start_chunk_time=start_chunk_time,
+            curr_dir=curr_dir,
+            concat_unit_size=concat_unit_size,
+        )
         # Cleaning the queue
-        if major_status:
+        if major:
             major_file_names_tbd.pop()
             if last_major_status is True:
-                # If we had two major elements in the row,
-                # previous minor element has to be deleted
                 minor_file_names_tbd.pop()
-        if major_status is False:
+        elif major is False:
             minor_file_names_tbd.pop()
             if last_major_status is False:
-                # If we had two minor elements in the row,
-                # previous major element has to be deleted
                 major_file_names_tbd.pop()
 
         last_timestamp = file.attrs.packet_time
-        last_major_status = major_status
+        last_major_status = major
 
         with open(path_dir + ".last", "w") as status_file:
-            status_file.write(file.file_name)
+            status_file.write(
+                str(start_chunk_time)
+                + ";"
+                + file.file_name
+                + ";"
+                + str(total_unit_size)
+            )
+
     return True
 
 
@@ -141,14 +248,13 @@ def main():
     dirs = get_dirs(path=PATH)
     for dir in dirs:
         # Local logger
-        set_file_logger(log=log, log_level="INFO", log_file=PATH + dir + "/log")
+        set_file_logger(log=log, log_level="DEBUG", log_file=PATH + dir + "/log")
         status = concat_files(curr_dir=dir)
         if status:
             log.info(f"{dir} | Saving finished with success")
-
         else:
+            # unused
             log.critical(f"{dir} | Concatenation was not finished due to error")
-
 
 if __name__ == "__main__":
     main()
