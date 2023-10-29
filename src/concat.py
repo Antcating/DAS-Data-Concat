@@ -5,9 +5,7 @@ import numpy as np
 
 from config import PATH, SAVE_PATH, TIME_DIFF_THRESHOLD, CONCAT_TIME, UNIT_SIZE
 from hdf import H5_FILE
-from logger import set_console_logger, set_file_logger, log
-
-# ---
+from logger import set_console_logger, set_file_logger, compose_log_message, log
 
 # Already correctly downsampled file for reference
 referenceFile = h5py.File("downsampled_reference.h5")
@@ -62,7 +60,9 @@ def require_h5(working_dir: str, chunk_time: float) -> h5py.Dataset:
         h5py.Dataset: Returns dataset of the created h5 file
     """
 
-    file = h5py.File(os.path.join(SAVE_PATH, working_dir + "_" + str(chunk_time) + ".h5"), "a")
+    file = h5py.File(
+        os.path.join(SAVE_PATH, working_dir + "_" + str(chunk_time) + ".h5"), "a"
+    )
     dset = file.require_dataset(
         "data_down",
         (0, SpaceSamples),
@@ -72,6 +72,7 @@ def require_h5(working_dir: str, chunk_time: float) -> h5py.Dataset:
     )
 
     return dset
+
 
 def calculate_chunk_offset(total_unit_size: int):
     return (total_unit_size // CONCAT_TIME) * CONCAT_TIME
@@ -93,10 +94,18 @@ def concat_to_chunk_by_time(
         return dset_concat_to
 
     chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
-    file_concat = h5py.File(os.path.join(SAVE_PATH, curr_dir + "_" + str(chunk_time) + ".h5"), "a")
+    file_concat = h5py.File(
+        os.path.join(SAVE_PATH, curr_dir + "_" + str(chunk_time) + ".h5"), "a"
+    )
     dset_concat = file_concat["data_down"]
 
-    log.debug(f"Concatenating {file.file_name}")
+    log.debug(
+        compose_log_message(
+            working_dir=curr_dir,
+            file=file.file_name,
+            message=f"Concatenating {file.file_name}"
+            )
+        )
     if file.dset_split is not None:
         dset_concat = concat_h5(
             dset_concat_from=file.dset_split, dset_concat_to=dset_concat
@@ -106,19 +115,35 @@ def concat_to_chunk_by_time(
 
     total_unit_size += int(concat_unit_size)
 
-    log.debug(f"Concat has shape:  {dset_concat.shape}")
+    log.debug(
+        compose_log_message(
+            working_dir=curr_dir,
+            file=file.file_name,
+            message=f"Concat has shape:  {dset_concat.shape}",
+        )
+    )
 
     # Flip to next chunk
     if total_unit_size % CONCAT_TIME == 0:
         log.info(
-            f"{curr_dir} | Final shape: {h5py.File(os.path.join(SAVE_PATH, curr_dir + '_' + str(chunk_time) + '.h5'))['data_down'].shape}"
+            compose_log_message(
+                working_dir=curr_dir,
+                file=file.file_name,
+                message=f"Final shape: {h5py.File(os.path.join(SAVE_PATH, curr_dir + '_' + str(chunk_time) + '.h5'))['data_down'].shape}",
+            )
         )
         # Recalculate new chunk time
         chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
         # Create new h5 chunk file
         dset_concat = require_h5(curr_dir, chunk_time)
         if file.dset_carry is not None:
-            log.info("Carry has been created and used in the next chunk")
+            log.info(
+                compose_log_message(
+                    working_dir=curr_dir,
+                    file=file.file_name,
+                    message="Carry has been created and used in the next chunk",
+                )
+            )
             dset_concat = concat_h5(
                 dset_concat_from=file.dset_carry, dset_concat_to=dset_concat
             )
@@ -129,7 +154,7 @@ def concat_to_chunk_by_time(
 
 def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
     # TODO: add annotation for function
-    path_dir: str = os.path.join(PATH, curr_dir) 
+    path_dir: str = os.path.join(PATH, curr_dir)
     file_names: list = get_h5_files(path_dir)
     # Staring from the last saved
     if os.path.isfile(os.path.join(path_dir, ".last")):
@@ -140,7 +165,7 @@ def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
         total_unit_size = int(total_unit_size)
 
         file_names_tbd = file_names[file_names.index(last_file) + 1 :].copy()
-        last_timestamp = float(last_file.split('_')[-1].rsplit('.', maxsplit=1)[0])
+        last_timestamp = float(last_file.split("_")[-1].rsplit(".", maxsplit=1)[0])
     else:
         file_names_tbd: list[str] = file_names.copy()
         # Init values
@@ -169,18 +194,20 @@ def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
         if major is False:
             minor_file_name = minor_file_names_tbd[-1]
 
-            msg = f"{curr_dir} | Using minor file: {minor_file_name}"
-            log.info(msg)
-
             file = H5_FILE(file_dir=curr_dir, file_name=minor_file_name)
             minor, reason = file.check_h5(last_timestamp=last_timestamp)
 
             # We tested both major and minor files. Both corrupted in some way, so we raise the exception!
             if minor is False:
                 raise Exception("DATA IS CORRUPTED IN THE UNRECOVERABLE WAY")
-        elif major is True:
-            log.info(f"{curr_dir} | Using major file: {major_file_name}")
 
+        log.info(
+            compose_log_message(
+                working_dir=curr_dir,
+                file=file.file_name,
+                message=f"Using {'major' if major else 'minor'}",
+            )
+        )
         # if end of the chunk is half of the packet and is major or minor after major was skipped:
         # Split and take first half of the packet
         if (major or reason == "missing") and CONCAT_TIME - (
@@ -235,19 +262,35 @@ def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
 
 def main():
     # Global logger
-    set_file_logger(log=log, log_level="WARNING", log_file=os.path.join(SAVE_PATH, "log"))
+    set_file_logger(
+        log=log, log_level="WARNING", log_file=os.path.join(SAVE_PATH, "log")
+    )
 
     set_console_logger(log=log, log_level="INFO")
     dirs = get_dirs(path=PATH)
-    for dir in dirs:
+    for working_dir in dirs:
         # Local logger
-        set_file_logger(log=log, log_level="DEBUG", log_file=os.path.join(PATH, dir, "log"))
-        status = concat_files(curr_dir=dir)
+        set_file_logger(
+            log=log, log_level="DEBUG", log_file=os.path.join(PATH, working_dir, "log")
+        )
+        status = concat_files(curr_dir=working_dir)
         if status:
-            log.info(f"{dir} | Saving finished with success")
+            log.info(
+                compose_log_message(
+                    working_dir=working_dir,
+                    file=None,
+                    message="Saving finished with success",
+                )
+            )
         else:
             # unused
-            log.critical(f"{dir} | Concatenation was not finished due to error")
+            log.critical(
+                compose_log_message(
+                    working_dir=working_dir,
+                    file=None,
+                    message="Concatenation was not finished due to error",
+                )
+            )
 
 
 if __name__ == "__main__":
