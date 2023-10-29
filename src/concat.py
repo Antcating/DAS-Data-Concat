@@ -33,7 +33,7 @@ def get_dirs(path: str) -> list:
     dirs = [
         dir
         for dir in os.listdir(path)
-        if os.path.isdir(path + dir) and dir != TODAY_DATE_STR
+        if os.path.isdir(os.path.join(path, dir)) and dir != TODAY_DATE_STR
     ]
     return dirs
 
@@ -62,7 +62,7 @@ def require_h5(working_dir: str, chunk_time: float) -> h5py.Dataset:
         h5py.Dataset: Returns dataset of the created h5 file
     """
 
-    file = h5py.File(SAVE_PATH + working_dir + "_" + str(chunk_time) + ".h5", "a")
+    file = h5py.File(os.path.join(SAVE_PATH, working_dir + "_" + str(chunk_time) + ".h5"), "a")
     dset = file.require_dataset(
         "data_down",
         (0, SpaceSamples),
@@ -84,25 +84,25 @@ def concat_to_chunk_by_time(
     curr_dir: str,
     concat_unit_size: int,
 ):
-    def concat_h5(dset_origin: h5py.Dataset, dset_destination: h5py.Dataset):
-        dset_destination.resize(
-            dset_destination.shape[0] + dset_origin.shape[0], axis=0
+    def concat_h5(dset_concat_from: h5py.Dataset, dset_concat_to: h5py.Dataset):
+        dset_concat_to.resize(
+            dset_concat_to.shape[0] + dset_concat_from.shape[0], axis=0
         )
-        dset_destination[-dset_origin.shape[0] :] = dset_origin[()]
+        dset_concat_to[-dset_concat_from.shape[0] :] = dset_concat_from[()]
 
-        return dset_destination
+        return dset_concat_to
 
     chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
-    file_concat = h5py.File(SAVE_PATH + curr_dir + "_" + str(chunk_time) + ".h5", "a")
+    file_concat = h5py.File(os.path.join(SAVE_PATH, curr_dir + "_" + str(chunk_time) + ".h5"), "a")
     dset_concat = file_concat["data_down"]
 
     log.debug(f"Concatenating {file.file_name}")
     if file.dset_split is not None:
         dset_concat = concat_h5(
-            dset_origin=file.dset_split, dset_destination=dset_concat
+            dset_concat_from=file.dset_split, dset_concat_to=dset_concat
         )
     else:
-        dset_concat = concat_h5(dset_origin=file.dset, dset_destination=dset_concat)
+        dset_concat = concat_h5(dset_concat_from=file.dset, dset_concat_to=dset_concat)
 
     total_unit_size += int(concat_unit_size)
 
@@ -111,7 +111,7 @@ def concat_to_chunk_by_time(
     # Flip to next chunk
     if total_unit_size % CONCAT_TIME == 0:
         log.info(
-            f"{curr_dir} | Final shape: {h5py.File(SAVE_PATH + curr_dir + '_' + str(chunk_time) + '.h5')['data_down'].shape}"
+            f"{curr_dir} | Final shape: {h5py.File(os.path.join(SAVE_PATH, curr_dir + '_' + str(chunk_time) + '.h5'))['data_down'].shape}"
         )
         # Recalculate new chunk time
         chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
@@ -120,7 +120,7 @@ def concat_to_chunk_by_time(
         if file.dset_carry is not None:
             log.info("Carry has been created and used in the next chunk")
             dset_concat = concat_h5(
-                dset_origin=file.dset_carry, dset_destination=dset_concat
+                dset_concat_from=file.dset_carry, dset_concat_to=dset_concat
             )
             total_unit_size += int(UNIT_SIZE / 2)
 
@@ -129,12 +129,12 @@ def concat_to_chunk_by_time(
 
 def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
     # TODO: add annotation for function
-    path_dir: str = PATH + curr_dir + "/"
+    path_dir: str = os.path.join(PATH, curr_dir) 
     file_names: list = get_h5_files(path_dir)
     # Staring from the last saved
-    if os.path.isfile(path_dir + ".last"):
+    if os.path.isfile(os.path.join(path_dir, ".last")):
         start_chunk_time, last_file, total_unit_size = (
-            open(path_dir + ".last", "r").read().split(";")
+            open(os.path.join(path_dir, ".last"), "r").read().split(";")
         )
         start_chunk_time = float(start_chunk_time)
         total_unit_size = int(total_unit_size)
@@ -221,7 +221,7 @@ def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
         last_timestamp = file.packet_time
         last_major_status = major
 
-        with open(path_dir + ".last", "w") as status_file:
+        with open(os.path.join(path_dir, ".last"), "w") as status_file:
             status_file.write(
                 str(start_chunk_time)
                 + ";"
@@ -235,13 +235,13 @@ def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
 
 def main():
     # Global logger
-    set_file_logger(log=log, log_level="WARNING", log_file=SAVE_PATH + "log")
+    set_file_logger(log=log, log_level="WARNING", log_file=os.path.join(SAVE_PATH, "log"))
 
     set_console_logger(log=log, log_level="INFO")
     dirs = get_dirs(path=PATH)
     for dir in dirs:
         # Local logger
-        set_file_logger(log=log, log_level="DEBUG", log_file=PATH + dir + "/log")
+        set_file_logger(log=log, log_level="DEBUG", log_file=os.path.join(PATH, dir, "log"))
         status = concat_files(curr_dir=dir)
         if status:
             log.info(f"{dir} | Saving finished with success")
