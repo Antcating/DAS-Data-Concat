@@ -145,8 +145,11 @@ def concat_files(
 ) -> tuple[bool, Exception | None]:
     # TODO: add annotation for function
     path_dir: str = os.path.join(PATH, curr_dir)
+
     # Staring from the last saved
-    file_names_tbd, start_chunk_time, total_unit_size, last_timestamp = get_queue(path_dir=path_dir)
+    file_names_tbd, start_chunk_time, total_unit_size, last_timestamp = get_queue(
+        path_dir=path_dir
+    )
 
     chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
     last_major_status = None
@@ -271,6 +274,8 @@ def main():
                         message="Concatenation was not finished due to error",
                     )
                 )
+                # Remove start_chunk_time and total_unit_size
+                # to continue processing from new chunk upon error
                 reset_chunks(os.path.join(PATH + working_dir))
 
 
