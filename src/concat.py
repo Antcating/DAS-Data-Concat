@@ -6,6 +6,7 @@ import numpy as np
 from config import PATH, SAVE_PATH, TIME_DIFF_THRESHOLD, CONCAT_TIME, UNIT_SIZE
 from hdf import H5_FILE
 from logger import set_console_logger, set_file_logger, compose_log_message, log
+from last import save_last, get_queue, reset_chunks
 
 # Already correctly downsampled file for reference
 referenceFile = h5py.File("downsampled_reference.h5")
@@ -34,19 +35,6 @@ def get_dirs(path: str) -> list:
         if os.path.isdir(os.path.join(path, dir)) and dir != TODAY_DATE_STR
     ]
     return dirs
-
-
-def get_h5_files(path: str) -> list:
-    """Returns h5 files for processing
-
-    Args:
-        path (str): Path to directory with h5 files
-
-    Returns:
-        list: List of h5 files in directory
-    """
-    file_names = sorted([name for name in os.listdir(path) if name.endswith(".h5")])
-    return file_names
 
 
 def require_h5(working_dir: str, chunk_time: float) -> h5py.Dataset:
@@ -103,9 +91,9 @@ def concat_to_chunk_by_time(
         compose_log_message(
             working_dir=curr_dir,
             file=file.file_name,
-            message=f"Concatenating {file.file_name}"
-            )
+            message=f"Concatenating {file.file_name}",
         )
+    )
     if file.dset_split is not None:
         dset_concat = concat_h5(
             dset_concat_from=file.dset_split, dset_concat_to=dset_concat
@@ -152,34 +140,19 @@ def concat_to_chunk_by_time(
     return total_unit_size
 
 
-def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
+def concat_files(
+    curr_dir: str,
+) -> tuple[bool, Exception | None]:
     # TODO: add annotation for function
     path_dir: str = os.path.join(PATH, curr_dir)
-    file_names: list = get_h5_files(path_dir)
     # Staring from the last saved
-    if os.path.isfile(os.path.join(path_dir, ".last")):
-        start_chunk_time, last_file, total_unit_size = (
-            open(os.path.join(path_dir, ".last"), "r").read().split(";")
-        )
-        start_chunk_time = float(start_chunk_time)
-        total_unit_size = int(total_unit_size)
-
-        file_names_tbd = file_names[file_names.index(last_file) + 1 :].copy()
-        last_timestamp = float(last_file.split("_")[-1].rsplit(".", maxsplit=1)[0])
-    else:
-        file_names_tbd: list[str] = file_names.copy()
-        # Init values
-        last_timestamp: int = 0
-        total_unit_size: int = 0
-        start_chunk_time: float = float(
-            file_names_tbd[0].split("_")[-1].rsplit(".", 1)[0]
-        )
+    file_names_tbd, start_chunk_time, total_unit_size, last_timestamp = get_queue(path_dir=path_dir)
 
     chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
     last_major_status = None
 
-    major_file_names_tbd = file_names_tbd[::2][::-1]
-    minor_file_names_tbd = file_names_tbd[1::2][::-1]
+    major_file_names_tbd: list[str] = file_names_tbd[::2][::-1]
+    minor_file_names_tbd: list[str] = file_names_tbd[1::2][::-1]
     # Create empty file for concat
     require_h5(curr_dir, chunk_time)
 
@@ -197,9 +170,16 @@ def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
             file = H5_FILE(file_dir=curr_dir, file_name=minor_file_name)
             minor, reason = file.check_h5(last_timestamp=last_timestamp)
 
-            # We tested both major and minor files. Both corrupted in some way, so we raise the exception!
+            # We tested both major and minor files. Both corrupted in some way
             if minor is False:
-                raise Exception("DATA IS CORRUPTED IN THE UNRECOVERABLE WAY")
+                log.critical(
+                    compose_log_message(
+                        working_dir=curr_dir,
+                        file=None,
+                        message="Data has a gap. Closing concat chunk",
+                    )
+                )
+                return False
 
         log.info(
             compose_log_message(
@@ -248,14 +228,13 @@ def concat_files(curr_dir: str) -> tuple[bool, Exception | None]:
         last_timestamp = file.packet_time
         last_major_status = major
 
-        with open(os.path.join(path_dir, ".last"), "w") as status_file:
-            status_file.write(
-                str(start_chunk_time)
-                + ";"
-                + file.file_name
-                + ";"
-                + str(total_unit_size)
-            )
+        # Save last processed
+        save_last(
+            path_dir=path_dir,
+            file_name=file.file_name,
+            start_chunk_time=start_chunk_time,
+            total_unit_size=total_unit_size,
+        )
 
     return True
 
@@ -273,24 +252,26 @@ def main():
         set_file_logger(
             log=log, log_level="DEBUG", log_file=os.path.join(PATH, working_dir, "log")
         )
-        status = concat_files(curr_dir=working_dir)
-        if status:
-            log.info(
-                compose_log_message(
-                    working_dir=working_dir,
-                    file=None,
-                    message="Saving finished with success",
+        status = False
+        while status is not True:
+            status = concat_files(curr_dir=working_dir)
+            if status:
+                log.info(
+                    compose_log_message(
+                        working_dir=working_dir,
+                        file=None,
+                        message="Saving finished with success",
+                    )
                 )
-            )
-        else:
-            # unused
-            log.critical(
-                compose_log_message(
-                    working_dir=working_dir,
-                    file=None,
-                    message="Concatenation was not finished due to error",
+            else:
+                log.critical(
+                    compose_log_message(
+                        working_dir=working_dir,
+                        file=None,
+                        message="Concatenation was not finished due to error",
+                    )
                 )
-            )
+                reset_chunks(os.path.join(PATH + working_dir))
 
 
 if __name__ == "__main__":
