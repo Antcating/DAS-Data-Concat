@@ -13,7 +13,7 @@ from files import (
     preserve_last_processed,
     reset_chunks,
     track_to_be_deleted,
-    save_last,
+    save_status,
     delete_processed_files,
     delete_dirs,
 )
@@ -161,14 +161,13 @@ def concat_files(
     path_dir: str = os.path.join(PATH, curr_dir)
     saving_dir = curr_dir
     # Staring from the last saved
-    file_names_tbd, start_chunk_time, total_unit_size, last_timestamp = get_queue(
+    file_names_tbd, start_chunk_time, total_unit_size, last_timestamp, last_chunk = get_queue(
         path_dir=path_dir
     )
 
     last_major_status = None
 
     major_file_names_tbd, minor_file_names_tbd = files_split(files=file_names_tbd)
-    last = False
 
     while len(major_file_names_tbd) > 0 or len(minor_file_names_tbd) > 0:
         if len(major_file_names_tbd) > 0:
@@ -228,7 +227,7 @@ def concat_files(
             start_chunk_time=start_chunk_time,
             saving_dir=saving_dir,
             concat_unit_size=concat_unit_size,
-            last=last,
+            last=last_chunk,
         )
         if total_unit_size == -1:
             return True
@@ -250,17 +249,18 @@ def concat_files(
         last_major_status = major
 
         # Save last processed
-        save_last(
+        save_status(
             path_dir=path_dir,
             file_name=file.file_name,
             start_chunk_time=start_chunk_time,
             total_unit_size=total_unit_size,
+            last_chunk=last_chunk,
         )
 
         if (
             len(major_file_names_tbd) == 0
             and len(minor_file_names_tbd) == 0
-            and last is False
+            and last_chunk is False
             and (CONCAT_TIME + total_unit_size) % CONCAT_TIME != 0
         ):
             log.debug("LAST")
@@ -273,7 +273,7 @@ def concat_files(
                 limit=int(4 * CHUNK_SIZE / UNIT_SIZE + 1),
             )
             major_file_names_tbd, minor_file_names_tbd = files_split(file_names_tbd)
-            last = True
+            last_chunk = True
 
     if (CONCAT_TIME + total_unit_size) % CONCAT_TIME != 0:
         return False
