@@ -1,15 +1,15 @@
 import os
-import h5py
+from h5py import File, Dataset
 import datetime
 import numpy as np
 
 from config import PATH, SAVE_PATH, TIME_DIFF_THRESHOLD, CONCAT_TIME, UNIT_SIZE
 from hdf import H5_FILE
 from logger import set_console_logger, set_file_logger, compose_log_message, log
-from last import save_last, get_queue, reset_chunks
+from last import save_last, get_queue, reset_chunks, get_h5_files
 
 # Already correctly downsampled file for reference
-referenceFile = h5py.File("downsampled_reference.h5")
+referenceFile = File("downsampled_reference.h5")
 TimeSamples, SpaceSamples = referenceFile["data_down"].shape
 
 CHUNK_SIZE = int(CONCAT_TIME / (UNIT_SIZE / 2))
@@ -29,15 +29,15 @@ def get_dirs(path: str) -> list:
     Returns:
         list: list of dirs in the path except dir named by today's date in format YYYYMMDD
     """
-    dirs = [
+    dirs = sorted([
         dir
         for dir in os.listdir(path)
         if os.path.isdir(os.path.join(path, dir)) and dir != TODAY_DATE_STR
-    ]
+    ])
     return dirs
 
 
-def require_h5(working_dir: str, chunk_time: float) -> h5py.Dataset:
+def require_h5(working_dir: str, chunk_time: float) -> Dataset:
     """Creates h5 file (if necessary)
 
     Args:
@@ -48,7 +48,7 @@ def require_h5(working_dir: str, chunk_time: float) -> h5py.Dataset:
         h5py.Dataset: Returns dataset of the created h5 file
     """
 
-    file = h5py.File(
+    file = File(
         os.path.join(SAVE_PATH, working_dir + "_" + str(chunk_time) + ".h5"), "a"
     )
     dset = file.require_dataset(
@@ -70,10 +70,12 @@ def concat_to_chunk_by_time(
     file: H5_FILE,
     total_unit_size: int,
     start_chunk_time: float,
-    curr_dir: str,
+    saving_dir: str,
     concat_unit_size: int,
+    last: bool
 ):
-    def concat_h5(dset_concat_from: h5py.Dataset, dset_concat_to: h5py.Dataset):
+    
+    def concat_h5(dset_concat_from: Dataset, dset_concat_to: Dataset):
         dset_concat_to.resize(
             dset_concat_to.shape[0] + dset_concat_from.shape[0], axis=0
         )
@@ -82,14 +84,14 @@ def concat_to_chunk_by_time(
         return dset_concat_to
 
     chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
-    file_concat = h5py.File(
-        os.path.join(SAVE_PATH, curr_dir + "_" + str(chunk_time) + ".h5"), "a"
+    file_concat = File(
+        os.path.join(SAVE_PATH, saving_dir + "_" + str(chunk_time) + ".h5"), "a"
     )
     dset_concat = file_concat["data_down"]
 
     log.debug(
         compose_log_message(
-            working_dir=curr_dir,
+            working_dir=saving_dir,
             file=file.file_name,
             message=f"Concatenating {file.file_name}",
         )
@@ -105,7 +107,7 @@ def concat_to_chunk_by_time(
 
     log.debug(
         compose_log_message(
-            working_dir=curr_dir,
+            working_dir=saving_dir,
             file=file.file_name,
             message=f"Concat has shape:  {dset_concat.shape}",
         )
@@ -115,37 +117,44 @@ def concat_to_chunk_by_time(
     if total_unit_size % CONCAT_TIME == 0:
         log.info(
             compose_log_message(
-                working_dir=curr_dir,
+                working_dir=saving_dir,
                 file=file.file_name,
-                message=f"Final shape: {h5py.File(os.path.join(SAVE_PATH, curr_dir + '_' + str(chunk_time) + '.h5'))['data_down'].shape}",
+                message=f"Final shape: {File(os.path.join(SAVE_PATH, saving_dir + '_' + str(chunk_time) + '.h5'))['data_down'].shape}",
             )
         )
-        # Recalculate new chunk time
-        chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
-        # Create new h5 chunk file
-        dset_concat = require_h5(curr_dir, chunk_time)
-        if file.dset_carry is not None:
-            log.info(
-                compose_log_message(
-                    working_dir=curr_dir,
-                    file=file.file_name,
-                    message="Carry has been created and used in the next chunk",
+        if last is False:
+            # Recalculate new chunk time
+            chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
+            # Create new h5 chunk file
+            dset_concat = require_h5(saving_dir, chunk_time)
+            if file.dset_carry is not None:
+                log.info(
+                    compose_log_message(
+                        working_dir=saving_dir,
+                        file=file.file_name,
+                        message="Carry has been created and used in the next chunk",
+                    )
                 )
-            )
-            dset_concat = concat_h5(
-                dset_concat_from=file.dset_carry, dset_concat_to=dset_concat
-            )
-            total_unit_size += int(UNIT_SIZE / 2)
-
+                dset_concat = concat_h5(
+                    dset_concat_from=file.dset_carry, dset_concat_to=dset_concat
+                )
+                total_unit_size += int(UNIT_SIZE / 2)
+        else:
+            return -1
     return total_unit_size
 
 
 def concat_files(
     curr_dir: str,
 ) -> tuple[bool, Exception | None]:
+    
+    def files_split(files: list):
+        files_major: list[str] = files[::2][::-1]
+        files_minor: list[str] = files[1::2][::-1]
+        return files_major, files_minor
     # TODO: add annotation for function
     path_dir: str = os.path.join(PATH, curr_dir)
-
+    saving_dir = curr_dir
     # Staring from the last saved
     file_names_tbd, start_chunk_time, total_unit_size, last_timestamp = get_queue(
         path_dir=path_dir
@@ -154,10 +163,10 @@ def concat_files(
     chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
     last_major_status = None
 
-    major_file_names_tbd: list[str] = file_names_tbd[::2][::-1]
-    minor_file_names_tbd: list[str] = file_names_tbd[1::2][::-1]
+    major_file_names_tbd, minor_file_names_tbd = files_split(files=file_names_tbd)
+    last = False
     # Create empty file for concat
-    require_h5(curr_dir, chunk_time)
+    require_h5(saving_dir, chunk_time)
 
     while len(major_file_names_tbd) > 0 or len(minor_file_names_tbd) > 0:
         if len(major_file_names_tbd) > 0:
@@ -215,9 +224,12 @@ def concat_files(
             file=file,
             total_unit_size=total_unit_size,
             start_chunk_time=start_chunk_time,
-            curr_dir=curr_dir,
+            saving_dir=saving_dir,
             concat_unit_size=concat_unit_size,
+            last=last
         )
+        if total_unit_size == -1:
+            return True
         # Cleaning the queue
         if major:
             major_file_names_tbd.pop()
@@ -238,7 +250,19 @@ def concat_files(
             start_chunk_time=start_chunk_time,
             total_unit_size=total_unit_size,
         )
-
+        if (len(major_file_names_tbd) == 0
+            and
+            len(minor_file_names_tbd) == 0
+            and
+            last is False
+            and
+            (CONCAT_TIME + total_unit_size) % CONCAT_TIME != 0
+        ):
+            next_dir_ = datetime.datetime.strptime(curr_dir, '%Y%m%d') + datetime.timedelta(days=1)
+            curr_dir = datetime.datetime.strftime(next_dir_, '%Y%m%d')
+            file_names_tbd = get_h5_files(path=os.path.join(PATH, curr_dir), limit=4*CHUNK_SIZE/UNIT_SIZE+1)
+            major_file_names_tbd, minor_file_names_tbd = files_split(file_names_tbd)
+            last = True
     return True
 
 
@@ -248,7 +272,7 @@ def main():
         log=log, log_level="WARNING", log_file=os.path.join(SAVE_PATH, "log")
     )
 
-    set_console_logger(log=log, log_level="INFO")
+    # set_console_logger(log=log, log_level="INFO")
     dirs = get_dirs(path=PATH)
     for working_dir in dirs:
         # Local logger
@@ -277,7 +301,6 @@ def main():
                 # Remove start_chunk_time and total_unit_size
                 # to continue processing from new chunk upon error
                 reset_chunks(os.path.join(PATH + working_dir))
-
 
 if __name__ == "__main__":
     main()
