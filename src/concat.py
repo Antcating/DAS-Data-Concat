@@ -31,7 +31,7 @@ def require_h5(working_dir: str, chunk_time: float) -> Dataset:
     """Creates h5 file (if necessary)
 
     Args:
-        working_dir (str): Name of the directory files are located at (for name of the new file)
+        working_dir (str): Name of the directory of the start of the chunk
         chunk_time (float): time of the necessary chunk
 
     Returns:
@@ -72,12 +72,14 @@ def concat_to_chunk_by_time(
             dset_concat_to[-dset_concat_from.shape[0] :] = dset_concat_from[()]
             return dset_concat_to
         except Exception as err:
-            # If we have critical error with saving chunk, we may want to preserve last chunk data to investigate
+            # If we have critical error with saving chunk,
+            # We may want to preserve last chunk data to investigate
             log.critical(
                 compose_log_message(
                     working_dir=saving_dir,
                     file=file.file_name,
-                    message="Critical error while saving last chunk, preserving last chunk. Error"
+                    message="Critical error while saving last chunk,\
+preserving last chunk. Error"
                     + str(err),
                 )
             )
@@ -119,11 +121,15 @@ def concat_to_chunk_by_time(
 
     # Flip to next chunk
     if total_unit_size % CONCAT_TIME == 0:
+        saved_file = File(
+            os.path.join(SAVE_PATH, saving_dir + "_" + str(chunk_time) + ".h5")
+        )
+        data_shape = saved_file["data_down"].shape
         log.info(
             compose_log_message(
                 working_dir=saving_dir,
                 file=file.file_name,
-                message=f"Final shape: {File(os.path.join(SAVE_PATH, saving_dir + '_' + str(chunk_time) + '.h5'))['data_down'].shape}",
+                message=f"Final shape: {data_shape}",
             )
         )
         if last is False:
@@ -161,9 +167,13 @@ def concat_files(
     path_dir: str = os.path.join(PATH, curr_dir)
     saving_dir = curr_dir
     # Staring from the last saved
-    file_names_tbd, start_chunk_time, total_unit_size, last_timestamp, last_chunk = get_queue(
-        path_dir=path_dir
-    )
+    (
+        file_names_tbd,
+        start_chunk_time,
+        total_unit_size,
+        last_timestamp,
+        last_chunk,
+    ) = get_queue(path_dir=path_dir)
 
     last_major_status = None
 
@@ -201,7 +211,8 @@ def concat_files(
                 message=f"Using {'major' if major else 'minor'}",
             )
         )
-        # if end of the chunk is half of the packet and is major or minor after major was skipped:
+        # if end of the chunk is half of the packet
+        # and is major or minor after major was skipped:
         # Split and take first half of the packet
         if (major or reason == "missing") and CONCAT_TIME - (
             (CONCAT_TIME + total_unit_size) % CONCAT_TIME

@@ -19,11 +19,11 @@ UNIT_SIZE = int(config["CONSTANTS"]["UNIT_SIZE"])
 
 if isdir(LOCALPATH):
     PATH = LOCALPATH
-else: 
-    raise Exception('PATH is not accessible!')
+else:
+    raise Exception("PATH is not accessible!")
 if isdir(NASPATH_final):
     SAVE_PATH = NASPATH_final
-elif isdir(LOCALPATH_final):    
+elif isdir(LOCALPATH_final):
     SAVE_PATH = LOCALPATH_final
 else:
-    raise Exception('SAVE_PATH is not accessible!')
+    raise Exception("SAVE_PATH is not accessible!")
