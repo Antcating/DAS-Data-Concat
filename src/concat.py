@@ -1,5 +1,4 @@
 import os
-import threading
 from h5py import File, Dataset
 import datetime
 import numpy as np
@@ -7,38 +6,25 @@ import numpy as np
 from config import PATH, SAVE_PATH, TIME_DIFF_THRESHOLD, CONCAT_TIME, UNIT_SIZE
 from hdf import H5_FILE
 from logger import set_console_logger, set_file_logger, compose_log_message, log
-from last import save_last, get_queue, reset_chunks, get_h5_files
-from delete import delete_files
+from files import (
+    get_dirs,
+    get_h5_files,
+    get_queue,
+    preserve_last_processed,
+    reset_chunks,
+    track_to_be_deleted,
+    save_last,
+    delete_processed_files,
+    delete_dirs,
+)
+
+# from delete import delete_files
 
 # Already correctly downsampled file for reference
 referenceFile = File("downsampled_reference.h5")
 TimeSamples, SpaceSamples = referenceFile["data_down"].shape
 
 CHUNK_SIZE = int(CONCAT_TIME / (UNIT_SIZE / 2))
-
-# *important* today's date according to UTC
-today = datetime.datetime.now(tz=datetime.UTC)
-date_list = [str(x) for x in [today.year, today.month, today.day]]
-TODAY_DATE_STR = "".join(date_list)
-
-
-def get_dirs(path: str) -> list:
-    """Returns dirs in path except dir named by today's date in format YYYYMMDD
-
-    Args:
-        path (str): path to dir to scan to dirs
-
-    Returns:
-        list: list of dirs in the path except dir named by today's date in format YYYYMMDD
-    """
-    dirs = sorted(
-        [
-            dir
-            for dir in os.listdir(path)
-            if os.path.isdir(os.path.join(path, dir)) and dir != TODAY_DATE_STR
-        ]
-    )
-    return dirs
 
 
 def require_h5(working_dir: str, chunk_time: float) -> Dataset:
@@ -79,17 +65,28 @@ def concat_to_chunk_by_time(
     last: bool,
 ):
     def concat_h5(dset_concat_from: Dataset, dset_concat_to: Dataset):
-        dset_concat_to.resize(
-            dset_concat_to.shape[0] + dset_concat_from.shape[0], axis=0
-        )
-        dset_concat_to[-dset_concat_from.shape[0] :] = dset_concat_from[()]
-
-        return dset_concat_to
+        try:
+            dset_concat_to.resize(
+                dset_concat_to.shape[0] + dset_concat_from.shape[0], axis=0
+            )
+            dset_concat_to[-dset_concat_from.shape[0] :] = dset_concat_from[()]
+            return dset_concat_to
+        except Exception as err:
+            # If we have critical error with saving chunk, we may want to preserve last chunk data to investigate
+            log.critical(
+                compose_log_message(
+                    working_dir=saving_dir,
+                    file=file.file_name,
+                    message="Critical error while saving last chunk, preserving last chunk. Error"
+                    + str(err),
+                )
+            )
+            preserve_last_processed()
 
     chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
-    
+
     require_h5(saving_dir, chunk_time)
-    
+
     file_concat = File(
         os.path.join(SAVE_PATH, saving_dir + "_" + str(chunk_time) + ".h5"), "a"
     )
@@ -102,7 +99,7 @@ def concat_to_chunk_by_time(
             message=f"Concatenating {file.file_name}",
         )
     )
-    
+
     if file.dset_split is not None:
         dset_concat = concat_h5(
             dset_concat_from=file.dset_split, dset_concat_to=dset_concat
@@ -168,13 +165,10 @@ def concat_files(
         path_dir=path_dir
     )
 
-    chunk_time = start_chunk_time + calculate_chunk_offset(total_unit_size)
     last_major_status = None
 
     major_file_names_tbd, minor_file_names_tbd = files_split(files=file_names_tbd)
     last = False
-    
-    to_be_deleted = []
 
     while len(major_file_names_tbd) > 0 or len(minor_file_names_tbd) > 0:
         if len(major_file_names_tbd) > 0:
@@ -199,7 +193,7 @@ def concat_files(
                         message="Data has a gap. Closing concat chunk",
                     )
                 )
-                return False, to_be_deleted
+                return False
 
         log.info(
             compose_log_message(
@@ -237,19 +231,19 @@ def concat_files(
             last=last,
         )
         if total_unit_size == -1:
-            return True, to_be_deleted
+            return True
         # Cleaning the queue
         if major:
-            to_be_deleted.append(os.path.join(curr_dir, major_file_names_tbd[-1]))
+            track_to_be_deleted(curr_dir, major_file_names_tbd[-1])
             major_file_names_tbd.pop()
             if last_major_status is True:
-                to_be_deleted.append(os.path.join(curr_dir, minor_file_names_tbd[-1]))
+                track_to_be_deleted(curr_dir, minor_file_names_tbd[-1])
                 minor_file_names_tbd.pop()
         elif major is False:
-            to_be_deleted.append(os.path.join(curr_dir, minor_file_names_tbd[-1]))
+            track_to_be_deleted(curr_dir, minor_file_names_tbd[-1])
             minor_file_names_tbd.pop()
             if last_major_status is False:
-                to_be_deleted.append(os.path.join(curr_dir, major_file_names_tbd[-1]))
+                track_to_be_deleted(curr_dir, major_file_names_tbd[-1])
                 major_file_names_tbd.pop()
 
         last_timestamp = file.packet_time
@@ -262,23 +256,28 @@ def concat_files(
             start_chunk_time=start_chunk_time,
             total_unit_size=total_unit_size,
         )
+
         if (
             len(major_file_names_tbd) == 0
             and len(minor_file_names_tbd) == 0
             and last is False
             and (CONCAT_TIME + total_unit_size) % CONCAT_TIME != 0
         ):
+            log.debug("LAST")
             next_dir_ = datetime.datetime.strptime(
                 curr_dir, "%Y%m%d"
             ) + datetime.timedelta(days=1)
             curr_dir = datetime.datetime.strftime(next_dir_, "%Y%m%d")
             file_names_tbd = get_h5_files(
-                path=os.path.join(PATH, curr_dir), limit=int(4 * CHUNK_SIZE / UNIT_SIZE + 1)
+                path=os.path.join(PATH, curr_dir),
+                limit=int(4 * CHUNK_SIZE / UNIT_SIZE + 1),
             )
             major_file_names_tbd, minor_file_names_tbd = files_split(file_names_tbd)
             last = True
 
-    return True, to_be_deleted
+    if (CONCAT_TIME + total_unit_size) % CONCAT_TIME != 0:
+        return False
+    return True
 
 
 def main():
@@ -287,17 +286,16 @@ def main():
         log=log, log_level="WARNING", log_file=os.path.join(SAVE_PATH, "log")
     )
 
-    # set_console_logger(log=log, log_level="INFO")
+    set_console_logger(log=log, log_level="DEBUG")
     dirs = get_dirs(path=PATH)
     for working_dir in dirs:
-        to_be_deleted_globally = []
         # Local logger
         set_file_logger(
             log=log, log_level="DEBUG", log_file=os.path.join(PATH, working_dir, "log")
         )
         status = False
         while status is not True:
-            status, to_be_deleted = concat_files(curr_dir=working_dir)
+            status = concat_files(curr_dir=working_dir)
             if status:
                 log.info(
                     compose_log_message(
@@ -306,6 +304,7 @@ def main():
                         message="Saving finished with success",
                     )
                 )
+                delete_processed_files()
             else:
                 log.critical(
                     compose_log_message(
@@ -317,7 +316,12 @@ def main():
                 # Remove start_chunk_time and total_unit_size
                 # to continue processing from new chunk upon error
                 reset_chunks(os.path.join(PATH + working_dir))
-            to_be_deleted_globally.extend(to_be_deleted)
-        delete_files(to_be_deleted_globally)
+
+    delete_dirs()
+
+
 if __name__ == "__main__":
+    start_time = datetime.datetime.now()
     main()
+    end_time = datetime.datetime.now()
+    print("Code finished in:", end_time - start_time)
