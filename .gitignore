@@ -1,0 +1,12 @@
+# enviroment vars ignored
+__pycache__
+.vscode
+.venv
+# data and logs are ignored
+**.h5
+**.last
+**.json
+log.**
+log
+# working files
+**.ipynb
