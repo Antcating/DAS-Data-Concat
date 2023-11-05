@@ -2,6 +2,7 @@ import os
 from h5py import File, Dataset
 import datetime
 import numpy as np
+import pytz
 
 from config import PATH, SAVE_PATH, TIME_DIFF_THRESHOLD, CHUNK_SIZE, UNIT_SIZE
 from hdf import H5_FILE
@@ -23,18 +24,22 @@ from files import (
 referenceFile = File("downsampled_reference.h5")
 TimeSamples, SpaceSamples = referenceFile["data_down"].shape
 
-def require_h5(save_date: str, chunk_time: float) -> Dataset:
+def require_h5(chunk_time: float) -> Dataset:
     """Creates h5 file (if necessary)
 
     Args:
-        save_date (str): Name of the chunk
         chunk_time (float): Time of the chunk
 
     Returns:
         h5py.Dataset: Returns dataset of the created h5 file
     """
+    
+    save_date_dt = datetime.datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
+    save_date = datetime.datetime.strftime(save_date_dt, "%Y%m%d")
+    filename = save_date + "_" + str(chunk_time) + ".h5"
+    print(filename, save_date)
     file = File(
-        os.path.join(SAVE_PATH, save_date + "_" + str(chunk_time) + ".h5"), "a"
+        os.path.join(SAVE_PATH, filename), "a"
     )
     dset = file.require_dataset(
         "data_down",
@@ -82,7 +87,7 @@ preserving last chunk. Error"
 
     chunk_time = start_chunk_time + calculate_chunk_offset(processed_time)
 
-    require_h5(saving_dir, chunk_time)
+    require_h5(chunk_time)
 
     file_concat = File(
         os.path.join(SAVE_PATH, saving_dir + "_" + str(chunk_time) + ".h5"), "a"
@@ -131,7 +136,7 @@ preserving last chunk. Error"
             # Recalculate new chunk time
             chunk_time = start_chunk_time + calculate_chunk_offset(processed_time)
             # Create new h5 chunk file
-            dset_concat = require_h5(saving_dir, chunk_time)
+            dset_concat = require_h5(chunk_time)
             if h5_file.dset_carry is not None:
                 log.info(
                     compose_log_message(
@@ -144,6 +149,8 @@ preserving last chunk. Error"
                     dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
                 )
                 processed_time += int(UNIT_SIZE / 2)
+            
+            delete_processed_files()
         else:
             return -1
     return processed_time
@@ -197,7 +204,8 @@ def concat_files(
                     )
                 )
                 return False
-
+        # if curr_dir == '20230728' and processed_time > 1500:
+        #     raise Exception
         log.info(
             compose_log_message(
                 working_dir=curr_dir,
@@ -238,17 +246,17 @@ def concat_files(
             return True
         # Cleaning the queue
         if is_major:
-            track_to_be_deleted(curr_dir, h5_major_list[-1])
-            h5_major_list.pop()
             if last_is_major is True:
-                track_to_be_deleted(curr_dir, h5_minor_list[-1])
+                track_to_be_deleted(h5_minor_list[-1])
                 h5_minor_list.pop()
+            track_to_be_deleted(h5_major_list[-1])
+            h5_major_list.pop()
         elif is_major is False:
-            track_to_be_deleted(curr_dir, h5_minor_list[-1])
-            h5_minor_list.pop()
             if last_is_major is False:
-                track_to_be_deleted(curr_dir, h5_major_list[-1])
+                track_to_be_deleted(h5_major_list[-1])
                 h5_major_list.pop()
+            track_to_be_deleted(h5_minor_list[-1])
+            h5_minor_list.pop()
 
         last_timestamp = h5_file.packet_time
         last_is_major = is_major
@@ -257,6 +265,7 @@ def concat_files(
         save_status(
             working_path_abs=working_dir,
             last_filename=h5_file.file_name,
+            last_filedir=h5_file.file_dir,
             start_chunk_time=start_chunk_time,
             processed_time=processed_time,
             is_last_chunk=is_last_chunk,
@@ -288,10 +297,12 @@ def concat_files(
 def main():
     # Global logger
     set_file_logger(
-        log=log, log_level="WARNING", log_file=os.path.join(SAVE_PATH, "log")
+        log=log, log_level="DEBUG", log_file=os.path.join(SAVE_PATH, "log")
     )
 
-    set_console_logger(log=log, log_level="DEBUG")
+    # set_console_logger(log=log, log_level="DEBUG")
+
+    delete_dirs()
     dirs = get_dirs(path_abs=PATH)
     for working_dir in dirs:
         # Local logger
