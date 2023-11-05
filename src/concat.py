@@ -23,9 +23,6 @@ from files import (
 referenceFile = File("downsampled_reference.h5")
 TimeSamples, SpaceSamples = referenceFile["data_down"].shape
 
-CHUNK_SIZE = int(CHUNK_SIZE / (UNIT_SIZE / 2))
-
-
 def require_h5(save_date: str, chunk_time: float) -> Dataset:
     """Creates h5 file (if necessary)
 
@@ -36,7 +33,6 @@ def require_h5(save_date: str, chunk_time: float) -> Dataset:
     Returns:
         h5py.Dataset: Returns dataset of the created h5 file
     """
-
     file = File(
         os.path.join(SAVE_PATH, save_date + "_" + str(chunk_time) + ".h5"), "a"
     )
@@ -317,7 +313,7 @@ def main():
                 log.critical(
                     compose_log_message(
                         working_dir=working_dir,
-                        message="Concatenation was not finished due to error",
+                        message="Concatenation was finished prematurely",
                     )
                 )
                 # Remove start_chunk_time and total_unit_size
