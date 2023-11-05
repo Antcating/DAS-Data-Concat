@@ -12,9 +12,9 @@ NASPATH_final = config["PATH"]["NASPATH_final"]
 # Difference between PACKET and SAVE times
 TIME_DIFF_THRESHOLD = int(config["CONSTANTS"]["TIME_DIFF_THRESHOLD"])
 DATA_LOSE_THRESHOLD = int(config["CONSTANTS"]["DATA_LOSE_THRESHOLD"])
-# Concat time
-CONCAT_TIME = int(config["CONSTANTS"]["CONCAT_TIME"])
-# Packet length in seconds
+# Concatenated chunk size (in seconds) 
+CHUNK_SIZE = int(config["CONSTANTS"]["CONCAT_TIME"])
+# Individual packet length (in seconds)
 UNIT_SIZE = int(config["CONSTANTS"]["UNIT_SIZE"])
 
 if isdir(LOCALPATH):
