@@ -2,6 +2,7 @@
 __pycache__
 .vscode
 .venv
+.venv_dev
 # data and logs are ignored
 **.h5
 **.last
