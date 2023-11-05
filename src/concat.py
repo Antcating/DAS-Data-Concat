@@ -18,7 +18,6 @@ from files import (
     delete_dirs,
 )
 
-# from delete import delete_files
 
 # Already correctly downsampled file for reference
 referenceFile = File("downsampled_reference.h5")
@@ -326,7 +325,7 @@ def main():
                 )
                 # Remove start_chunk_time and total_unit_size
                 # to continue processing from new chunk upon error
-                reset_chunks(os.path.join(PATH + working_dir))
+                reset_chunks(os.path.join(PATH, working_dir))
 
     delete_dirs()
 
