@@ -206,8 +206,7 @@ def concat_files(
                     )
                 )
                 return False
-        # if curr_dir == '20230728' and processed_time > 1500:
-        #     raise Exception
+
         log.info(
             compose_log_message(
                 working_dir=curr_dir,
@@ -300,7 +299,7 @@ def main():
     # Global logger
     set_file_logger(log=log, log_level="DEBUG", log_file=os.path.join(SAVE_PATH, "log"))
 
-    # set_console_logger(log=log, log_level="DEBUG")
+    set_console_logger(log=log, log_level="DEBUG")
 
     delete_dirs()
     dirs = get_dirs(path_abs=PATH)
