@@ -4,7 +4,14 @@ import datetime
 import numpy as np
 import pytz
 
-from config import PATH, SAVE_PATH, TIME_DIFF_THRESHOLD, CHUNK_SIZE, UNIT_SIZE
+from config import (
+    PATH,
+    SAVE_PATH,
+    TIME_DIFF_THRESHOLD,
+    CHUNK_SIZE,
+    UNIT_SIZE,
+    SPACE_SAMPLES,
+)
 from hdf import H5_FILE
 from logger import set_console_logger, set_file_logger, compose_log_message, log
 from status import (
@@ -20,10 +27,6 @@ from status import (
 )
 
 
-# Already correctly downsampled file for reference
-referenceFile = File("downsampled_reference.h5")
-TimeSamples, SpaceSamples = referenceFile["data_down"].shape
-
 def require_h5(chunk_time: float) -> Dataset:
     """Creates h5 file (if necessary)
 
@@ -33,17 +36,15 @@ def require_h5(chunk_time: float) -> Dataset:
     Returns:
         h5py.Dataset: Returns dataset of the created h5 file
     """
-    
+
     save_date_dt = datetime.datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
     save_date = datetime.datetime.strftime(save_date_dt, "%Y%m%d")
     filename = save_date + "_" + str(chunk_time) + ".h5"
-    file = File(
-        os.path.join(SAVE_PATH, filename), "a"
-    )
+    file = File(os.path.join(SAVE_PATH, filename), "a")
     dset = file.require_dataset(
         "data_down",
-        (0, SpaceSamples),
-        maxshape=(None, SpaceSamples),
+        (0, SPACE_SAMPLES),
+        maxshape=(None, SPACE_SAMPLES),
         chunks=True,
         dtype=np.float32,
     )
@@ -106,7 +107,9 @@ preserving last chunk. Error"
             dset_concat_from=h5_file.dset_split, dset_concat_to=dset_concat
         )
     else:
-        dset_concat = concat_h5(dset_concat_from=h5_file.dset, dset_concat_to=dset_concat)
+        dset_concat = concat_h5(
+            dset_concat_from=h5_file.dset, dset_concat_to=dset_concat
+        )
 
     processed_time += int(merge_time)
 
@@ -148,7 +151,7 @@ preserving last chunk. Error"
                     dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
                 )
                 processed_time += int(UNIT_SIZE / 2)
-            
+
             delete_processed_files()
         else:
             return -1
@@ -295,9 +298,7 @@ def concat_files(
 
 def main():
     # Global logger
-    set_file_logger(
-        log=log, log_level="DEBUG", log_file=os.path.join(SAVE_PATH, "log")
-    )
+    set_file_logger(log=log, log_level="DEBUG", log_file=os.path.join(SAVE_PATH, "log"))
 
     # set_console_logger(log=log, log_level="DEBUG")
 
