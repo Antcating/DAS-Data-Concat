@@ -29,7 +29,7 @@ from status import (
 )
 
 
-def require_h5(chunk_time: float) -> Dataset:
+def require_h5(chunk_time: float) -> Dataset | None:
     """Creates h5 file (if necessary)
 
     Args:
@@ -42,16 +42,17 @@ def require_h5(chunk_time: float) -> Dataset:
     save_date_dt = datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
     save_date = datetime.strftime(save_date_dt, "%Y%m%d")
     filename = save_date + "_" + str(chunk_time) + ".h5"
-    file = File(os.path.join(SAVE_PATH, filename), "a")
-    dset = file.require_dataset(
-        "data_down",
-        (0, SPACE_SAMPLES),
-        maxshape=(None, SPACE_SAMPLES),
-        chunks=True,
-        dtype=np.float32,
-    )
+    if not os.path.isfile(os.path.join(SAVE_PATH, filename)):
+        file = File(os.path.join(SAVE_PATH, filename), "a")
+        dset = file.require_dataset(
+            "data_down",
+            (0, SPACE_SAMPLES),
+            maxshape=(None, SPACE_SAMPLES),
+            chunks=True,
+            dtype=np.float32,
+        )
 
-    return dset
+        return dset
 
 
 # @deal.post(lambda x: x >= 0)
@@ -157,7 +158,6 @@ preserving last chunk. Error"
                 )
                 processed_time += int(UNIT_SIZE / 2)
 
-            delete_processed_files()
         else:
             return -1
     return processed_time
@@ -174,7 +174,6 @@ def concat_files(
         return files_major, files_minor
 
     working_dir_r = curr_dir
-    working_dir: str = os.path.join(PATH, curr_dir)
     # Staring from the last saved
     (
         h5_files_list,
@@ -182,7 +181,7 @@ def concat_files(
         processed_time,
         last_timestamp,
         is_last_chunk,
-    ) = get_queue(path_abs=working_dir)
+    ) = get_queue(filepath_r=working_dir_r)
 
     last_is_major = None
 
@@ -269,9 +268,9 @@ def concat_files(
 
         # Save last processed
         save_status(
-            working_path_r=working_dir_r,
+            filedir_r=working_dir_r,
             last_filename=h5_file.file_name,
-            last_filedir=h5_file.file_dir,
+            last_filedir_r=h5_file.file_dir,
             start_chunk_time=start_chunk_time,
             processed_time=processed_time,
             is_last_chunk=is_last_chunk,
@@ -287,7 +286,7 @@ def concat_files(
             next_dir_ = datetime.strptime(curr_dir, "%Y%m%d") + timedelta(days=1)
             curr_dir = datetime.strftime(next_dir_, "%Y%m%d")
             h5_files_list = get_h5_files(
-                path_abs=os.path.join(PATH, curr_dir),
+                dir_path_r=os.path.join(PATH, curr_dir),
                 limit=int(4 * CHUNK_SIZE / UNIT_SIZE + 1),
             )
             h5_major_list, h5_minor_list = files_split(h5_files_list)
@@ -305,7 +304,7 @@ def main():
     set_console_logger(log=log, log_level="DEBUG")
 
     delete_dirs()
-    dirs = get_dirs(path_abs=PATH)
+    dirs = get_dirs(filedir_r=PATH)
     for working_dir in dirs:
         # Local logger
         set_file_logger(
