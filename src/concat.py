@@ -75,7 +75,7 @@ def concat_to_chunk_by_time(
             dset_concat_to.resize(
                 dset_concat_to.shape[0] + dset_concat_from.shape[0], axis=0
             )
-            dset_concat_to[-dset_concat_from.shape[0] :] = dset_concat_from[()]
+            dset_concat_to[-dset_concat_from.shape[0] :] = dset_concat_from
             return dset_concat_to
         except Exception as err:
             # If we have critical error with saving chunk,
