@@ -7,7 +7,7 @@ import pytz
 from config import PATH, SAVE_PATH, TIME_DIFF_THRESHOLD, CHUNK_SIZE, UNIT_SIZE
 from hdf import H5_FILE
 from logger import set_console_logger, set_file_logger, compose_log_message, log
-from files import (
+from status import (
     get_dirs,
     get_h5_files,
     get_queue,
@@ -37,7 +37,6 @@ def require_h5(chunk_time: float) -> Dataset:
     save_date_dt = datetime.datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
     save_date = datetime.datetime.strftime(save_date_dt, "%Y%m%d")
     filename = save_date + "_" + str(chunk_time) + ".h5"
-    print(filename, save_date)
     file = File(
         os.path.join(SAVE_PATH, filename), "a"
     )
