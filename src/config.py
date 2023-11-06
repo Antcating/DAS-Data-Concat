@@ -1,9 +1,8 @@
 import configparser
-import json
-from os.path import isdir, isfile
+from os.path import isdir
 
 config = configparser.ConfigParser()
-config.read("config.ini")
+config.read("config.ini", encoding="UTF-8")
 
 # PATHs to files and save
 LOCALPATH = config["PATH"]["LOCALPATH"]

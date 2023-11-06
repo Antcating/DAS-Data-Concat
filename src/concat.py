@@ -1,4 +1,6 @@
 import os
+
+# import deal
 from h5py import File, Dataset
 from datetime import datetime, timedelta
 import numpy as np
@@ -52,6 +54,8 @@ def require_h5(chunk_time: float) -> Dataset:
     return dset
 
 
+# @deal.post(lambda x: x >= 0)
+# @deal.pre(lambda x: x >= 0)
 def calculate_chunk_offset(processed_units: int):
     return (processed_units // CHUNK_SIZE) * CHUNK_SIZE
 
@@ -64,6 +68,7 @@ def concat_to_chunk_by_time(
     merge_time: int,
     is_last_chunk: bool,
 ):
+    # @deal.post(lambda x: type(x) is Dataset)
     def concat_h5(dset_concat_from: Dataset, dset_concat_to: Dataset):
         try:
             dset_concat_to.resize(
@@ -332,6 +337,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # deal.disable()
     start_time = datetime.now()
     main()
     end_time = datetime.now()
