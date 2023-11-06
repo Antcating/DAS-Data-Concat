@@ -286,7 +286,7 @@ def concat_files(
             next_dir_ = datetime.strptime(curr_dir, "%Y%m%d") + timedelta(days=1)
             curr_dir = datetime.strftime(next_dir_, "%Y%m%d")
             h5_files_list = get_h5_files(
-                dir_path_r=os.path.join(PATH, curr_dir),
+                dir_path_r=curr_dir,
                 limit=int(4 * CHUNK_SIZE / UNIT_SIZE + 1),
             )
             h5_major_list, h5_minor_list = files_split(h5_files_list)
