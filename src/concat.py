@@ -1,6 +1,6 @@
 import os
 from h5py import File, Dataset
-import datetime
+from datetime import datetime, timedelta
 import numpy as np
 import pytz
 
@@ -37,8 +37,8 @@ def require_h5(chunk_time: float) -> Dataset:
         h5py.Dataset: Returns dataset of the created h5 file
     """
 
-    save_date_dt = datetime.datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
-    save_date = datetime.datetime.strftime(save_date_dt, "%Y%m%d")
+    save_date_dt = datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
+    save_date = datetime.strftime(save_date_dt, "%Y%m%d")
     filename = save_date + "_" + str(chunk_time) + ".h5"
     file = File(os.path.join(SAVE_PATH, filename), "a")
     dset = file.require_dataset(
@@ -264,7 +264,7 @@ def concat_files(
 
         # Save last processed
         save_status(
-            working_path_abs=working_dir,
+            working_path_r=working_dir_r,
             last_filename=h5_file.file_name,
             last_filedir=h5_file.file_dir,
             start_chunk_time=start_chunk_time,
@@ -279,10 +279,8 @@ def concat_files(
             and (CHUNK_SIZE + processed_time) % CHUNK_SIZE != 0
         ):
             log.debug("LAST")
-            next_dir_ = datetime.datetime.strptime(
-                curr_dir, "%Y%m%d"
-            ) + datetime.timedelta(days=1)
-            curr_dir = datetime.datetime.strftime(next_dir_, "%Y%m%d")
+            next_dir_ = datetime.strptime(curr_dir, "%Y%m%d") + timedelta(days=1)
+            curr_dir = datetime.strftime(next_dir_, "%Y%m%d")
             h5_files_list = get_h5_files(
                 path_abs=os.path.join(PATH, curr_dir),
                 limit=int(4 * CHUNK_SIZE / UNIT_SIZE + 1),
@@ -334,7 +332,7 @@ def main():
 
 
 if __name__ == "__main__":
-    start_time = datetime.datetime.now()
+    start_time = datetime.now()
     main()
-    end_time = datetime.datetime.now()
+    end_time = datetime.now()
     print("Code finished in:", end_time - start_time)
