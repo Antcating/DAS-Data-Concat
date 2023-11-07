@@ -15,7 +15,7 @@ from config import (
     SPACE_SAMPLES,
 )
 from hdf import H5_FILE
-from logger import set_console_logger, set_file_logger, compose_log_message, log
+from logger import set_console_logger, set_file_logger, compose_log_message, set_logger
 from status import (
     get_dirs,
     get_h5_files,
@@ -27,6 +27,9 @@ from status import (
     delete_processed_files,
     delete_dirs,
 )
+
+log = set_logger("CONCAT", global_concat_log=True)
+set_console_logger(log=log, log_level="DEBUG")
 
 
 def require_h5(chunk_time: float) -> Dataset | None:
@@ -298,11 +301,6 @@ def concat_files(
 
 
 def main():
-    # Global logger
-    set_file_logger(log=log, log_level="DEBUG", log_file=os.path.join(SAVE_PATH, "log"))
-
-    set_console_logger(log=log, log_level="DEBUG")
-
     delete_dirs()
     dirs = get_dirs(filedir_r=PATH)
     for working_dir in dirs:
