@@ -2,7 +2,7 @@ import os
 
 # import deal
 from h5py import File, Dataset
-from datetime import datetime, timedelta
+from datetime import datetime
 import numpy as np
 import pytz
 
@@ -18,10 +18,8 @@ from hdf import H5_FILE
 from logger import set_console_logger, set_file_logger, compose_log_message, set_logger
 from status import (
     get_dirs,
-    get_h5_files,
     get_queue,
     preserve_last_processed,
-    reset_chunks,
     track_to_be_deleted,
     save_status,
     delete_processed_files,
@@ -70,7 +68,6 @@ def concat_to_chunk_by_time(
     start_chunk_time: float,
     saving_dir: str,
     merge_time: int,
-    is_last_chunk: bool,
 ):
     # @deal.post(lambda x: type(x) is Dataset)
     def concat_h5(dset_concat_from: Dataset, dset_concat_to: Dataset):
@@ -143,26 +140,24 @@ preserving last chunk. Error"
                 message=f"Final shape: {data_shape}",
             )
         )
-        if is_last_chunk is False:
-            # Recalculate new chunk time
-            chunk_time = start_chunk_time + calculate_chunk_offset(processed_time)
-            # Create new h5 chunk file
-            dset_concat = require_h5(chunk_time)
-            if h5_file.dset_carry is not None:
-                log.info(
-                    compose_log_message(
-                        working_dir=saving_dir,
-                        file=h5_file.file_name,
-                        message="Carry has been created and used in the next chunk",
-                    )
-                )
-                dset_concat = concat_h5(
-                    dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
-                )
-                processed_time += int(UNIT_SIZE / 2)
 
-        else:
-            return -1
+        # Recalculate new chunk time
+        chunk_time = start_chunk_time + calculate_chunk_offset(processed_time)
+        # Create new h5 chunk file
+        dset_concat = require_h5(chunk_time)
+        if h5_file.dset_carry is not None:
+            log.info(
+                compose_log_message(
+                    working_dir=saving_dir,
+                    file=h5_file.file_name,
+                    message="Carry has been created and used in the next chunk",
+                )
+            )
+            dset_concat = concat_h5(
+                dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
+            )
+            processed_time += int(UNIT_SIZE / 2)
+
     return processed_time
 
 
@@ -183,7 +178,6 @@ def concat_files(
         start_chunk_time,
         processed_time,
         last_timestamp,
-        is_last_chunk,
     ) = get_queue(filepath_r=working_dir_r)
 
     last_is_major = None
@@ -248,7 +242,6 @@ def concat_files(
             start_chunk_time=start_chunk_time,
             saving_dir=working_dir_r,
             merge_time=merge_time,
-            is_last_chunk=is_last_chunk,
         )
         if processed_time == -1:
             return True
@@ -276,24 +269,23 @@ def concat_files(
             last_filedir_r=h5_file.file_dir,
             start_chunk_time=start_chunk_time,
             processed_time=processed_time,
-            is_last_chunk=is_last_chunk,
         )
 
-        if (
-            len(h5_major_list) == 0
-            and len(h5_minor_list) == 0
-            and is_last_chunk is False
-            and (CHUNK_SIZE + processed_time) % CHUNK_SIZE != 0
-        ):
-            log.debug("LAST")
-            next_dir_ = datetime.strptime(curr_dir, "%Y%m%d") + timedelta(days=1)
-            curr_dir = datetime.strftime(next_dir_, "%Y%m%d")
-            h5_files_list = get_h5_files(
-                dir_path_r=curr_dir,
-                limit=int(4 * CHUNK_SIZE / UNIT_SIZE + 1),
-            )
-            h5_major_list, h5_minor_list = files_split(h5_files_list)
-            is_last_chunk = True
+        # if (
+        #     len(h5_major_list) == 0
+        #     and len(h5_minor_list) == 0
+        #     and is_last_chunk is False
+        #     and (CHUNK_SIZE + processed_time) % CHUNK_SIZE != 0
+        # ):
+        #     log.debug("LAST")
+        #     next_dir_ = datetime.strptime(curr_dir, "%Y%m%d") + timedelta(days=1)
+        #     curr_dir = datetime.strftime(next_dir_, "%Y%m%d")
+        #     h5_files_list = get_h5_files(
+        #         dir_path_r=curr_dir,
+        #         limit=int(4 * CHUNK_SIZE / UNIT_SIZE + 1),
+        #     )
+        #     h5_major_list, h5_minor_list = files_split(h5_files_list)
+        #     is_last_chunk = True
 
     if (CHUNK_SIZE + processed_time) % CHUNK_SIZE != 0:
         return False
@@ -309,26 +301,25 @@ def main():
             log=log, log_level="DEBUG", log_file=os.path.join(PATH, working_dir, "log")
         )
         proc_status = False
-        while proc_status is not True:
-            proc_status = concat_files(curr_dir=working_dir)
-            if proc_status:
-                log.info(
-                    compose_log_message(
-                        working_dir=working_dir,
-                        message="Saving finished with success",
-                    )
+        proc_status = concat_files(curr_dir=working_dir)
+        if proc_status:
+            log.info(
+                compose_log_message(
+                    working_dir=working_dir,
+                    message="Saving finished with success",
                 )
-                delete_processed_files()
-            else:
-                log.critical(
-                    compose_log_message(
-                        working_dir=working_dir,
-                        message="Concatenation was finished prematurely",
-                    )
+            )
+            delete_processed_files()
+        else:
+            log.critical(
+                compose_log_message(
+                    working_dir=working_dir,
+                    message="Concatenation was finished prematurely",
                 )
-                # Remove start_chunk_time and total_unit_size
-                # to continue processing from new chunk upon error
-                reset_chunks(os.path.join(PATH, working_dir))
+            )
+            # Remove start_chunk_time and total_unit_size
+            # to continue processing from new chunk upon error
+            # reset_chunks(os.path.join(PATH, working_dir))
 
     delete_dirs()
 
