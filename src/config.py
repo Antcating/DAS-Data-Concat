@@ -8,7 +8,7 @@ config.read("config.ini", encoding="UTF-8")
 # CONCATENATION CHARACTERISTICS
 #
 # Difference between PACKET and SAVE times
-TIME_DIFF_THRESHOLD = int(config["CONSTANTS"]["TIME_DIFF_THRESHOLD"])
+TIME_DIFF_THRESHOLD = float(config["CONSTANTS"]["TIME_DIFF_THRESHOLD"])
 DATA_LOSE_THRESHOLD = int(config["CONSTANTS"]["DATA_LOSE_THRESHOLD"])
 # Concatenated chunk size (in seconds)
 CHUNK_SIZE = int(config["CONSTANTS"]["CONCAT_TIME"])
