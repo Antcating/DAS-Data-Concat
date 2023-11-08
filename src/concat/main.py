@@ -289,8 +289,7 @@ def concat_files(
             saving_dir=working_dir_r,
             merge_time=merge_time,
         )
-        # if processed_time == -1:
-        #     return True
+
         # Cleaning the queue
         if is_major:
             if last_is_major is True:
@@ -316,8 +315,8 @@ def concat_files(
         if h5_file.is_day_end:
             return True
 
-    if (CHUNK_SIZE + processed_time) % CHUNK_SIZE != 0:
-        return False
+    # if (CHUNK_SIZE + processed_time) % CHUNK_SIZE != 0:
+    #     return False
     return True
 
 
@@ -334,24 +333,25 @@ def main():
             log=log, log_level="DEBUG", log_file=os.path.join(PATH, working_dir, "log")
         )
         proc_status = False
-        proc_status = concat_files(curr_dir=working_dir)
-        if proc_status:
-            log.info(
-                compose_log_message(
-                    working_dir=working_dir,
-                    message="Saving finished with success",
+        while proc_status is not True:
+            proc_status = concat_files(curr_dir=working_dir)
+            if proc_status:
+                log.info(
+                    compose_log_message(
+                        working_dir=working_dir,
+                        message="Saving finished with success",
+                    )
                 )
-            )
-        else:
-            log.critical(
-                compose_log_message(
-                    working_dir=working_dir,
-                    message="Concatenation was finished prematurely",
+            else:
+                log.critical(
+                    compose_log_message(
+                        working_dir=working_dir,
+                        message="Concatenation was finished prematurely",
+                    )
                 )
-            )
-            # Remove start_chunk_time and total_unit_size
-            # to continue processing from new chunk upon error
-            reset_chunks(os.path.join(PATH, working_dir))
+                # Remove start_chunk_time and total_unit_size
+                # to continue processing from new chunk upon error
+                reset_chunks(os.path.join(PATH, working_dir))
 
     end_time = datetime.now()
     print("Code finished in:", end_time - start_time)
