@@ -33,6 +33,8 @@ class H5_FILE:
         self.dset_split: h5py.Dataset = None
         self.dset_carry: h5py.Dataset = None
 
+        self.split_time: int | float = None
+
         self.unpack_stat = True
 
         self.unpack_h5_data()
