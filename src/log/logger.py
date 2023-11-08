@@ -17,7 +17,7 @@ LOG_LEVEL = "INFO"
 
 def set_logger(
     name: str = None, global_concat_log: bool = False, global_log_level: str = "INFO"
-):
+) -> logging.Logger:
     log = logging.getLogger(name)
     log.setLevel(global_log_level)  # set at default log level
     if global_concat_log:
@@ -27,11 +27,13 @@ def set_logger(
     return log
 
 
-def compose_log_message(working_dir: str = None, file: str = None, message: str = None):
+def compose_log_message(
+    working_dir: str = None, file: str = None, message: str = None
+) -> str:
     return LOG_MESSAGE.format(working_dir=working_dir, file=file, msg=message)
 
 
-def set_console_logger(log: logging.Logger, log_level: str):
+def set_console_logger(log: logging.Logger, log_level: str) -> None:
     """Sets up console logger
 
     Args:
@@ -46,7 +48,7 @@ def set_console_logger(log: logging.Logger, log_level: str):
     log.info("Console handler added successfully")
 
 
-def set_file_logger(log: logging.Logger, log_level: str, log_file: str | None):
+def set_file_logger(log: logging.Logger, log_level: str, log_file: str | None) -> None:
     """Sets up file logger
 
     Args:
