@@ -20,9 +20,7 @@ from log.logger import set_file_logger, compose_log_message, set_logger
 from concat.status import (
     get_dirs,
     get_queue,
-    track_to_be_deleted,
     save_status,
-    delete_processed_files,
     reset_chunks,
 )
 
@@ -156,6 +154,7 @@ preserving last chunk. Error"
             start_chunk_time=start_chunk_time,
             processed_time=processed_time,
         )
+        return processed_time
     # Flip to next chunk
     if processed_time % CHUNK_SIZE == 0:
         saved_file = File(
@@ -186,7 +185,7 @@ preserving last chunk. Error"
                 dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
             )
             processed_time += UNIT_SIZE - merge_time
-
+        return processed_time
     return processed_time
 
 
@@ -295,15 +294,11 @@ def concat_files(
         # Cleaning the queue
         if is_major:
             if last_is_major is True:
-                track_to_be_deleted(h5_minor_list[-1])
                 h5_minor_list.pop()
-            track_to_be_deleted(h5_major_list[-1])
             h5_major_list.pop()
         elif is_major is False:
             if last_is_major is False:
-                track_to_be_deleted(h5_major_list[-1])
                 h5_major_list.pop()
-            track_to_be_deleted(h5_minor_list[-1])
             h5_minor_list.pop()
 
         last_timestamp = h5_file.packet_time
@@ -318,21 +313,8 @@ def concat_files(
             processed_time=processed_time,
         )
 
-        # if (
-        #     len(h5_major_list) == 0
-        #     and len(h5_minor_list) == 0
-        #     and is_last_chunk is False
-        #     and (CHUNK_SIZE + processed_time) % CHUNK_SIZE != 0
-        # ):
-        #     log.debug("LAST")
-        #     next_dir_ = datetime.strptime(curr_dir, "%Y%m%d") + timedelta(days=1)
-        #     curr_dir = datetime.strftime(next_dir_, "%Y%m%d")
-        #     h5_files_list = get_h5_files(
-        #         dir_path_r=curr_dir,
-        #         limit=int(4 * CHUNK_SIZE / UNIT_SIZE + 1),
-        #     )
-        #     h5_major_list, h5_minor_list = files_split(h5_files_list)
-        #     is_last_chunk = True
+        if h5_file.is_day_end:
+            return True
 
     if (CHUNK_SIZE + processed_time) % CHUNK_SIZE != 0:
         return False
@@ -360,7 +342,6 @@ def main():
                     message="Saving finished with success",
                 )
             )
-            delete_processed_files()
         else:
             log.critical(
                 compose_log_message(
@@ -372,7 +353,6 @@ def main():
             # to continue processing from new chunk upon error
             reset_chunks(os.path.join(PATH, working_dir))
 
-    # delete_dirs()
     end_time = datetime.now()
     print("Code finished in:", end_time - start_time)
 
