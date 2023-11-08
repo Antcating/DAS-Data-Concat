@@ -41,32 +41,42 @@ class H5_FILE:
 
     def unpack_h5_data(self) -> None:
         """Unpacks at and data from h5"""
-        try:
-            self.packet_time = float(
-                self.file_name.split("_")[-1].rsplit(".", maxsplit=1)[0]
-            )
-            self.packet_datetime = datetime.fromtimestamp(self.packet_time, tz=pytz.UTC)
-        except ValueError:
-            log.error(
-                compose_log_message(
-                    working_dir=self.file_dir,
-                    file=self.file_name,
-                    message="Unable to read file's packet_time, unable to use it",
-                )
-            )
-            self.unpack_stat = False
 
-        try:
-            self.dset = self.file["data_down"]
-        except KeyError:
-            log.error(
-                compose_log_message(
-                    working_dir=self.file_dir,
-                    file=self.file_name,
-                    message="Unable to unpack data from h5 file, dataset missing",
+        def unpack_date():
+            try:
+                self.packet_time = float(
+                    self.file_name.split("_")[-1].rsplit(".", maxsplit=1)[0]
                 )
-            )
-            self.unpack_stat = False
+                self.packet_datetime = datetime.fromtimestamp(
+                    self.packet_time, tz=pytz.UTC
+                )
+                return True
+            except ValueError:
+                log.exception(
+                    compose_log_message(
+                        working_dir=self.file_dir,
+                        file=self.file_name,
+                        message="Unable to read file's packet_time, unable to use it",
+                    )
+                )
+                return False
+
+        def unpack_data():
+            try:
+                self.dset = self.file["data_down"]
+                return True
+            except KeyError:
+                log.exception(
+                    compose_log_message(
+                        working_dir=self.file_dir,
+                        file=self.file_name,
+                        message="Unable to unpack data from h5 file, dataset missing",
+                    )
+                )
+                return False
+
+        self.unpack_stat = unpack_date()
+        self.unpack_stat = unpack_data()
 
     def check_h5(self, last_timestamp: float) -> bool:
         """Checks h5 file if it fits the requirements to be concatenated
