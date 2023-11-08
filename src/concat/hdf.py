@@ -9,7 +9,7 @@ from log.logger import compose_log_message, set_logger
 log = set_logger("HDF_PROCESSING", global_concat_log=True)
 
 
-class H5_FILE:
+class H5File:
     """Main class for h5 processing"""
 
     def __init__(self, file_dir: str, file_name: str) -> None:

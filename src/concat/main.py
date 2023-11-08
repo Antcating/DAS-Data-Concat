@@ -15,7 +15,7 @@ from config import (
     SPACE_SAMPLES,
     SPS,
 )
-from concat.hdf import H5_FILE
+from concat.hdf import H5File
 from log.logger import set_file_logger, compose_log_message, set_logger
 from concat.status import (
     get_dirs,
@@ -57,7 +57,7 @@ def calculate_chunk_offset(processed_units: int):
 
 
 def concat_to_chunk_by_time(
-    h5_file: H5_FILE,
+    h5_file: H5File,
     processed_time: int,
     start_chunk_time: float,
     saving_dir: str,
@@ -158,7 +158,7 @@ def get_next_h5(
 ):
     if len(h5_major_list) > 0:
         major_filename = h5_major_list[-1]
-        h5_file = H5_FILE(file_dir=working_dir_r, file_name=major_filename)
+        h5_file = H5File(file_dir=working_dir_r, file_name=major_filename)
         is_major, h5_unpack_error = h5_file.check_h5(last_timestamp=last_timestamp)
     else:
         is_major = False
@@ -166,7 +166,7 @@ def get_next_h5(
     if is_major is False:
         minor_filename = h5_minor_list[-1]
 
-        h5_file = H5_FILE(file_dir=working_dir_r, file_name=minor_filename)
+        h5_file = H5File(file_dir=working_dir_r, file_name=minor_filename)
         is_minor, h5_unpack_error = h5_file.check_h5(last_timestamp=last_timestamp)
 
         # We tested both major and minor files. Both corrupted in some way
