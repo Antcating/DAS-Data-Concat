@@ -2,10 +2,9 @@ import os
 import json
 
 # import deal
-import shutil
 import datetime
 
-from config import PATH, SAVE_PATH
+from config import PATH
 
 from log.logger import compose_log_message, set_logger
 
@@ -225,50 +224,3 @@ def reset_chunks(file_dir_r: str) -> bool:
         with open(status_filepath_r, "w", encoding="UTF-8") as status_file:
             status_vars: dict = json.dump(status_vars, status_file)
     return True
-
-
-def track_to_be_deleted(filepath: str):
-    with open(
-        os.path.join(SAVE_PATH, ".to_be_deleted"), "a+", encoding="UTF-8"
-    ) as track_deleted:
-        track_deleted.write(os.path.join(filepath) + ";")
-
-
-def delete_processed_files():
-    log.info(compose_log_message(message="Deleting h5 files upon saving the chunk"))
-    if os.path.isfile(os.path.join(SAVE_PATH, ".to_be_deleted")):
-        with open(
-            os.path.join(SAVE_PATH, ".to_be_deleted"), "r", encoding="UTF-8"
-        ) as to_be_deleted:
-            files_paths = to_be_deleted.read()
-            files_paths_list = files_paths.split(";")
-            for filepath_abs in files_paths_list:
-                if filepath_abs:
-                    try:
-                        os.remove(filepath_abs)
-                    except FileNotFoundError:
-                        log.warning(
-                            compose_log_message(
-                                message="During deleting file an error ocurred"
-                            )
-                        )
-        os.remove(os.path.join(SAVE_PATH, ".to_be_deleted"))
-
-
-def preserve_last_processed():
-    log.info(
-        compose_log_message(
-            message="Preserving h5 files to investigate unexpected error"
-        )
-    )
-    if os.path.isfile(os.path.join(SAVE_PATH, ".to_be_deleted")):
-        os.remove(os.path.join(SAVE_PATH, ".to_be_deleted"))
-
-
-def delete_dirs():
-    log.info(
-        compose_log_message(message="Deleting directories without h5 files in them")
-    )
-    for filedir_r in get_dirs(PATH):
-        if not get_h5_files(filedir_r):
-            shutil.rmtree(os.path.join(PATH, filedir_r))
