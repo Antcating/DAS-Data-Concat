@@ -39,15 +39,15 @@ def require_h5(chunk_time: float) -> Dataset | None:
     save_date = datetime.strftime(save_date_dt, "%Y%m%d")
     filename = save_date + "_" + str(chunk_time) + ".h5"
     file = File(os.path.join(SAVE_PATH, filename), "a")
-    dset = file.require_dataset(
+
+    log.debug(f"Provided chunk time: {chunk_time}. File: {filename} provided")
+    return file.require_dataset(
         "data_down",
         (0, SPACE_SAMPLES),
         maxshape=(None, SPACE_SAMPLES),
         chunks=True,
         dtype=np.float32,
     )
-    log.debug(f"Provided chunk time: {chunk_time}. File: {filename} provided")
-    return dset
 
 
 # @deal.post(lambda x: x >= 0)
@@ -114,58 +114,42 @@ preserving last chunk. Error"
         )
     )
     # Flip next day
-    if h5_file.is_day_end:
-        start_chunk_time = h5_file.packet_time + h5_file.split_time
-        dset_concat = require_h5(start_chunk_time)
-        if h5_file.dset_carry is not None:
-            log.info(
-                compose_log_message(
-                    working_dir=saving_dir,
-                    file=h5_file.file_name,
-                    message="Carry has been created and used in the next day chunk",
-                )
-            )
-        dset_concat = concat_h5(
-            dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
-        )
-        log.debug(
-            compose_log_message(
-                working_dir=saving_dir,
-                file=h5_file.file_name,
-                message=f"Next day Concat has shape:  {dset_concat.shape}",
-            )
-        )
-        processed_time = UNIT_SIZE - h5_file.split_time
-
-        save_status(
-            filedir_r=(h5_file.packet_datetime + timedelta(days=1)).strftime("%Y%m%d"),
-            last_filename=h5_file.file_name,
-            last_filedir_r=(h5_file.packet_datetime + timedelta(days=1)).strftime(
-                "%Y%m%d"
-            ),
-            start_chunk_time=start_chunk_time,
-            processed_time=processed_time,
-        )
-        return chunk_time, processed_time
-    # Flip to next chunk
-    if processed_time % CHUNK_SIZE == 0:
-        # Recalculate new chunk time
+    if h5_file.is_day_end or processed_time % CHUNK_SIZE == 0:
         chunk_time = h5_file.packet_time + h5_file.split_time
-        # Create new h5 chunk file
         dset_concat = require_h5(chunk_time)
         if h5_file.dset_carry is not None:
             log.info(
                 compose_log_message(
                     working_dir=saving_dir,
                     file=h5_file.file_name,
-                    message="Carry has been created and used in the next chunk",
+                    message="Carry has been used in the next chunk",
                 )
             )
             dset_concat = concat_h5(
                 dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
             )
+            log.debug(
+                compose_log_message(
+                    working_dir=saving_dir,
+                    file=h5_file.file_name,
+                    message=f"Next day Concat has shape:  {dset_concat.shape}",
+                )
+            )
             processed_time = UNIT_SIZE - h5_file.split_time
+        if h5_file.is_day_end:
+            save_status(
+                filedir_r=(h5_file.packet_datetime + timedelta(days=1)).strftime(
+                    "%Y%m%d"
+                ),
+                last_filename=h5_file.file_name,
+                last_filedir_r=(h5_file.packet_datetime + timedelta(days=1)).strftime(
+                    "%Y%m%d"
+                ),
+                start_chunk_time=chunk_time,
+                processed_time=processed_time,
+            )
         return chunk_time, processed_time
+
     return chunk_time, processed_time
 
 
@@ -314,7 +298,7 @@ def concat_files(
 def main():
     global log
     log = set_logger("CONCAT", global_concat_log=True, global_log_level="DEBUG")
-    start_time = datetime.now()
+    start_time = datetime.now(tz=pytz.UTC)
 
     # delete_dirs()
     dirs = get_dirs(filedir_r=PATH)
@@ -344,7 +328,7 @@ def main():
                 # to continue processing from new chunk upon error
                 reset_chunks(os.path.join(PATH, working_dir))
 
-    end_time = datetime.now()
+    end_time = datetime.now(tz=pytz.UTC)
     print("Code finished in:", end_time - start_time)
 
 
