@@ -184,7 +184,7 @@ preserving last chunk. Error"
             dset_concat = concat_h5(
                 dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
             )
-            processed_time += UNIT_SIZE - merge_time
+            processed_time = UNIT_SIZE - merge_time
         return processed_time
     return processed_time
 
@@ -315,8 +315,6 @@ def concat_files(
         if h5_file.is_day_end:
             return True
 
-    # if (CHUNK_SIZE + processed_time) % CHUNK_SIZE != 0:
-    #     return False
     return True
 
 
