@@ -38,17 +38,16 @@ def require_h5(chunk_time: float) -> Dataset | None:
     save_date_dt = datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
     save_date = datetime.strftime(save_date_dt, "%Y%m%d")
     filename = save_date + "_" + str(chunk_time) + ".h5"
-    if not os.path.isfile(os.path.join(SAVE_PATH, filename)):
-        file = File(os.path.join(SAVE_PATH, filename), "a")
-        dset = file.require_dataset(
-            "data_down",
-            (0, SPACE_SAMPLES),
-            maxshape=(None, SPACE_SAMPLES),
-            chunks=True,
-            dtype=np.float32,
-        )
-
-        return dset
+    file = File(os.path.join(SAVE_PATH, filename), "a")
+    dset = file.require_dataset(
+        "data_down",
+        (0, SPACE_SAMPLES),
+        maxshape=(None, SPACE_SAMPLES),
+        chunks=True,
+        dtype=np.float32,
+    )
+    log.debug(f"Provided chunk time: {chunk_time}. File: {filename} provided")
+    return dset
 
 
 # @deal.post(lambda x: x >= 0)
@@ -62,7 +61,6 @@ def concat_to_chunk_by_time(
     processed_time: int,
     start_chunk_time: float,
     saving_dir: str,
-    merge_time: int,
 ):
     # @deal.post(lambda x: type(x) is Dataset)
     def concat_h5(dset_concat_from: Dataset, dset_concat_to: Dataset):
@@ -84,16 +82,10 @@ preserving last chunk. Error"
                     + str(err),
                 )
             )
-            # preserve_last_processed()
 
-    chunk_time = start_chunk_time + calculate_chunk_offset(processed_time)
+    chunk_time = start_chunk_time
 
-    require_h5(chunk_time)
-
-    file_concat = File(
-        os.path.join(SAVE_PATH, saving_dir + "_" + str(chunk_time) + ".h5"), "a"
-    )
-    dset_concat = file_concat["data_down"]
+    dset_concat = require_h5(chunk_time)
 
     log.debug(
         compose_log_message(
@@ -112,7 +104,7 @@ preserving last chunk. Error"
             dset_concat_from=h5_file.dset, dset_concat_to=dset_concat
         )
 
-    processed_time += int(merge_time)
+    processed_time += int(h5_file.split_time)
 
     log.debug(
         compose_log_message(
@@ -123,7 +115,7 @@ preserving last chunk. Error"
     )
     # Flip next day
     if h5_file.is_day_end:
-        start_chunk_time = h5_file.packet_time + merge_time
+        start_chunk_time = h5_file.packet_time + h5_file.split_time
         dset_concat = require_h5(start_chunk_time)
         if h5_file.dset_carry is not None:
             log.info(
@@ -143,7 +135,7 @@ preserving last chunk. Error"
                 message=f"Next day Concat has shape:  {dset_concat.shape}",
             )
         )
-        processed_time = UNIT_SIZE - merge_time
+        processed_time = UNIT_SIZE - h5_file.split_time
 
         save_status(
             filedir_r=(h5_file.packet_datetime + timedelta(days=1)).strftime("%Y%m%d"),
@@ -154,23 +146,11 @@ preserving last chunk. Error"
             start_chunk_time=start_chunk_time,
             processed_time=processed_time,
         )
-        return processed_time
+        return chunk_time, processed_time
     # Flip to next chunk
     if processed_time % CHUNK_SIZE == 0:
-        saved_file = File(
-            os.path.join(SAVE_PATH, saving_dir + "_" + str(chunk_time) + ".h5")
-        )
-        data_shape = saved_file["data_down"].shape
-        log.info(
-            compose_log_message(
-                working_dir=saving_dir,
-                file=h5_file.file_name,
-                message=f"Final shape: {data_shape}",
-            )
-        )
-
         # Recalculate new chunk time
-        chunk_time = start_chunk_time + calculate_chunk_offset(processed_time)
+        chunk_time = h5_file.packet_time + h5_file.split_time
         # Create new h5 chunk file
         dset_concat = require_h5(chunk_time)
         if h5_file.dset_carry is not None:
@@ -184,9 +164,45 @@ preserving last chunk. Error"
             dset_concat = concat_h5(
                 dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
             )
-            processed_time = UNIT_SIZE - merge_time
-        return processed_time
-    return processed_time
+            processed_time = UNIT_SIZE - h5_file.split_time
+        return chunk_time, processed_time
+    return chunk_time, processed_time
+
+
+def get_next_h5(
+    h5_major_list: list, h5_minor_list: list, working_dir_r: str, last_timestamp: float
+):
+    if len(h5_major_list) > 0:
+        major_filename = h5_major_list[-1]
+        h5_file = H5_FILE(file_dir=working_dir_r, file_name=major_filename)
+        is_major, h5_unpack_error = h5_file.check_h5(last_timestamp=last_timestamp)
+    else:
+        is_major = False
+
+    if is_major is False:
+        minor_filename = h5_minor_list[-1]
+
+        h5_file = H5_FILE(file_dir=working_dir_r, file_name=minor_filename)
+        is_minor, h5_unpack_error = h5_file.check_h5(last_timestamp=last_timestamp)
+
+        # We tested both major and minor files. Both corrupted in some way
+        if is_minor is False:
+            log.critical(
+                compose_log_message(
+                    working_dir=working_dir_r,
+                    message="Data has a gap. Closing concat chunk",
+                )
+            )
+            return (None, False, "gap")
+
+    log.info(
+        compose_log_message(
+            working_dir=working_dir_r,
+            file=h5_file.file_name,
+            message=f"Using {'major' if is_major else 'minor'}",
+        )
+    )
+    return (h5_file, is_major, h5_unpack_error)
 
 
 def concat_files(
@@ -213,39 +229,14 @@ def concat_files(
     h5_major_list, h5_minor_list = files_split(files=h5_files_list)
 
     while len(h5_major_list) > 0 or len(h5_minor_list) > 0:
-        if len(h5_major_list) > 0:
-            major_filename = h5_major_list[-1]
-            h5_file = H5_FILE(file_dir=curr_dir, file_name=major_filename)
-            is_major, h5_unpack_error = h5_file.check_h5(last_timestamp=last_timestamp)
-        else:
-            is_major = False
-
-        if is_major is False:
-            minor_filename = h5_minor_list[-1]
-
-            h5_file = H5_FILE(file_dir=curr_dir, file_name=minor_filename)
-            is_minor, h5_unpack_error = h5_file.check_h5(last_timestamp=last_timestamp)
-
-            # We tested both major and minor files. Both corrupted in some way
-            if is_minor is False:
-                log.critical(
-                    compose_log_message(
-                        working_dir=curr_dir,
-                        message="Data has a gap. Closing concat chunk",
-                    )
-                )
-                return False
-
-        log.info(
-            compose_log_message(
-                working_dir=curr_dir,
-                file=h5_file.file_name,
-                message=f"Using {'major' if is_major else 'minor'}",
-            )
+        h5_file, is_major, h5_unpack_error = get_next_h5(
+            h5_major_list=h5_major_list,
+            h5_minor_list=h5_minor_list,
+            working_dir_r=working_dir_r,
+            last_timestamp=last_timestamp,
         )
-        # if end of the chunk is half of the packet
-        # and is major or minor after major was skipped:
-        # Split and take first half of the packet
+        if h5_file is None:
+            return False
         next_date = h5_file.packet_datetime.replace(
             hour=0, minute=0, second=0
         ) + timedelta(days=1)
@@ -260,8 +251,11 @@ def concat_files(
             h5_file.dset_carry = h5_file.dset[split_offset:, :]
 
             h5_file.is_day_end = True
-            merge_time = till_midnight
+            h5_file.split_time = till_midnight
 
+        # if end of the chunk is half of the packet
+        # and is major or minor after major was skipped:
+        # Split and take first half of the packet
         elif (
             is_major or h5_unpack_error == "missing"
         ) and till_next_chunk < TIME_DIFF_THRESHOLD:
@@ -272,22 +266,21 @@ def concat_files(
             h5_file.dset_carry = h5_file.dset[split_offset:, :]
 
             h5_file.is_chunk_end = True
-            merge_time = till_next_chunk
+            h5_file.split_time = till_next_chunk
         else:
             packet_diff = int(h5_file.packet_time - last_timestamp)
             if packet_diff < TIME_DIFF_THRESHOLD:
                 h5_file.dset_split = h5_file.dset[SPS * packet_diff :, :]
-                merge_time = packet_diff
+                h5_file.split_time = packet_diff
             else:
-                merge_time = UNIT_SIZE
+                h5_file.split_time = UNIT_SIZE
 
         # Concatenation if OK
-        processed_time = concat_to_chunk_by_time(
+        start_chunk_time, processed_time = concat_to_chunk_by_time(
             h5_file=h5_file,
             processed_time=processed_time,
             start_chunk_time=start_chunk_time,
             saving_dir=working_dir_r,
-            merge_time=merge_time,
         )
 
         # Cleaning the queue
