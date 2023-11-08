@@ -12,7 +12,7 @@ log = set_logger("STATUS", global_concat_log=True)
 
 
 # @deal.post(lambda x: type(x) is list)
-def get_dirs(filedir_r: str, today: bool = False) -> list:
+def get_dirs(filedir_r: str) -> list:
     """Returns dirs in path except dir named by today's date in format YYYYMMDD
 
     Args:
@@ -22,38 +22,30 @@ def get_dirs(filedir_r: str, today: bool = False) -> list:
         list: list of dirs in the path (+today). Format YYYYMMDD
     """
     filedir_abs: str = os.path.join(PATH, filedir_r)
-    dirs: list[str] = []
     if os.path.isdir(filedir_abs):
         log.debug(
             compose_log_message(working_dir=filedir_r, message="Reading directory")
         )
-        if today:
-            dirs = sorted(
-                [
-                    dir
-                    for dir in os.listdir(filedir_abs)
-                    if os.path.isdir(os.path.join(filedir_abs, dir))
-                ]
-            )
-        else:
-            today_datetime: datetime.datetime = datetime.datetime.now(tz=datetime.UTC)
-            today_formatted: str = datetime.datetime.strftime(today_datetime, "%Y%m%d")
 
-            dirs = sorted(
-                [
-                    dir
-                    for dir in os.listdir(filedir_abs)
-                    if os.path.isdir(os.path.join(filedir_abs, dir))
-                    and dir != today_formatted
-                ]
-            )
+        today_datetime: datetime.datetime = datetime.datetime.now(tz=datetime.UTC)
+        today_formatted: str = datetime.datetime.strftime(today_datetime, "%Y%m%d")
+
+        return sorted(
+            [
+                dir
+                for dir in os.listdir(filedir_abs)
+                if os.path.isdir(os.path.join(filedir_abs, dir))
+                and dir != today_formatted
+            ]
+        )
+
     else:
         log.warning(
             compose_log_message(
                 working_dir=filedir_r, message="Directory does not exists"
             )
         )
-    return dirs
+        return []
 
 
 # @deal.post(lambda x: type(x) is list)
@@ -140,7 +132,7 @@ def save_status(
 
 
 # @deal.post(lambda *args: type(*args) is tuple)
-# @deal.pre(lambda path_abs: type(path_abs) is str)
+# @deal.pre(lambda filepath_r: type(filepath_r) is str)
 def get_queue(filepath_r: str):
     """Calculates files that are left to process in directory
     Also calculates several necessary vars to proceed with concat
