@@ -2,7 +2,7 @@
 Description=Run concatenation of FEBUS data
 
 [Service]
-ExecStart=/bin/bash {PROJECT_PATH}/concat.sh
+ExecStart=/bin/bash PROJECT_PATH/concat.sh
 
 [Install]
 WantedBy=multi-user.target
