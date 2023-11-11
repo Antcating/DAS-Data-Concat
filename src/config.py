@@ -29,7 +29,6 @@ PORT = config["CLIENT"]["PORT"]
 
 # PATHs to files and save
 LOCALPATH = config["PATH"]["LOCALPATH"]
-LOCALPATH_final = config["PATH"]["LOCALPATH_final"]
 NASPATH_final = config["PATH"]["NASPATH_final"]
 
 if isdir(LOCALPATH):
@@ -38,7 +37,5 @@ else:
     raise Exception("PATH is not accessible!")
 if isdir(NASPATH_final):
     SAVE_PATH = NASPATH_final
-elif isdir(LOCALPATH_final):
-    SAVE_PATH = LOCALPATH_final
 else:
     raise Exception("SAVE_PATH is not accessible!")
