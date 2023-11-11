@@ -19,7 +19,7 @@ def get_dirs(filedir_r: str) -> list:
         absolute_path (str): path to dir to scan to dirs
 
     Returns:
-        list: list of dirs in the path (+today). Format YYYYMMDD
+        list: list of dirs in the path (-today). Format YYYYMMDD
     """
     filedir_abs: str = os.path.join(PATH, filedir_r)
     if os.path.isdir(filedir_abs):
@@ -49,9 +49,7 @@ def get_dirs(filedir_r: str) -> list:
 
 
 # @deal.post(lambda x: type(x) is list)
-def get_h5_files(
-    dir_path_r: str, last_filename: str | None = None, limit: int = None
-) -> list[str]:
+def get_h5_files(dir_path_r: str, last_filename: str | None = None) -> list[str]:
     """Returns h5 files for processing
 
     Args:
@@ -75,7 +73,7 @@ def get_h5_files(
             except ValueError:
                 log.warning("File was not found in dir during indexing last filename")
 
-        return sorted(file_names[:limit])
+        return sorted(file_names)
     except FileNotFoundError:
         log.warning(
             compose_log_message(
@@ -101,6 +99,7 @@ def save_status(
     Args:
         working_path_abs (str): absolute PATH to working dir
         last_filename (str): last processed file's name
+        last_filedir_r: last processed working dir
         start_chunk_time (float): time of the beginning of the first chunk
         processed_time (int): size of the last chunk including file's data
     """
@@ -152,7 +151,7 @@ def get_queue(filepath_r: str):
             )
         else:
             start_chunk_time = 0
-
+        # Reset processed timer
         processed_time: int = 0
         last_timestamp: int = 0
         return (

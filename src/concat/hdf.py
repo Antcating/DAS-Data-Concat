@@ -32,7 +32,7 @@ class H5File:
         self.is_day_end = False
         self.dset_split: h5py.Dataset = None
         self.dset_carry: h5py.Dataset = None
-
+        # If chunk splitted, time of split will be written here
         self.split_time: int | float = None
 
         self.unpack_stat = True
@@ -43,6 +43,11 @@ class H5File:
         """Unpacks at and data from h5"""
 
         def unpack_date():
+            """Unpacking packet time (as UNIX timestamp)
+
+            Returns:
+                bool: Status bool
+            """
             try:
                 self.packet_time = float(
                     self.file_name.split("_")[-1].rsplit(".", maxsplit=1)[0]
@@ -62,6 +67,11 @@ class H5File:
                 return False
 
         def unpack_data():
+            """Unpacks actual data from packet
+
+            Returns:
+                bool: Status bool
+            """
             try:
                 self.dset = self.file["data_down"]
                 return True
