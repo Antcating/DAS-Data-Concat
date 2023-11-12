@@ -4,9 +4,7 @@ import h5py
 from os.path import join
 
 from config import PATH, DATA_LOSE_THRESHOLD, TIME_SAMPLES, SPACE_SAMPLES
-from log.logger import compose_log_message, set_logger
-
-log = set_logger("HDF_PROCESSING", global_concat_log=True)
+from log.logger import compose_log_message, log
 
 
 class H5File:

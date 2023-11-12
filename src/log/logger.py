@@ -1,6 +1,6 @@
 import logging
 from logging.handlers import TimedRotatingFileHandler
-from os.path import join
+import os
 
 from config import SAVE_PATH
 
@@ -15,16 +15,63 @@ LOG_MESSAGE = "{working_dir} | {file} | {msg}"
 LOG_LEVEL = "INFO"
 
 
-def set_logger(
-    name: str = None, global_concat_log: bool = False, global_log_level: str = "INFO"
-) -> logging.Logger:
-    log = logging.getLogger(name)
-    log.setLevel(global_log_level)  # set at default log level
-    if global_concat_log:
-        set_file_logger(
-            log=log, log_level=global_log_level, log_file=join(SAVE_PATH, "log")
-        )
-    return log
+class Logger:
+    def __init__(self, name: str = None) -> None:
+        logging.basicConfig(level=logging.DEBUG)
+
+        self.name = name
+        self.log = self.get_logger(name)
+        self.handlers: dict = {}
+
+    def get_logger(self, name: str = None):
+        return logging.getLogger(name)
+
+    def get_instance(self):
+        return self.log
+
+    def attach_file_logger(
+        self, handler_name: str = None, level: str = "DEBUG", filename: str = None
+    ):
+        if filename is None:
+            logging.error("Filename for logging is not provided")
+            return
+        fh = TimedRotatingFileHandler(filename=filename, encoding="UTF-8", when="D")
+        fh.setLevel(level=level)
+        fh.setFormatter(LOCAL_LOG_FORMATTER)
+
+        self.handlers[handler_name] = fh
+        self.log.addHandler(fh)
+
+        return handler_name
+
+    def attach_console_logger(self, handler_name: str = None, level: str = "DEBUG"):
+        ch = logging.StreamHandler()
+        ch.setLevel(level=level)
+        ch.setFormatter(LOCAL_LOG_FORMATTER)
+
+        self.handlers[handler_name] = ch
+        self.log.addHandler(ch)
+
+        return handler_name
+
+    def detach_handler(self, handler_name: str = None):
+        try:
+            handler = self.handlers[handler_name]
+            self.log.removeHandler(handler)
+            self.log.debug("Log handler successfully removed")
+        except KeyError:
+            self.log.error(
+                "Unable to delete log handler: no handler with provided name"
+            )
+
+
+def get_global_logger(level: str = "DEBUG"):
+    logger = Logger("CONCAT")
+    logger.attach_file_logger(
+        "global_concat_logger", level=level, filename=os.path.join(SAVE_PATH, "log")
+    )
+    logger.attach_console_logger("global_console_logger", level=level)
+    return logger, logger.get_instance()
 
 
 def compose_log_message(
@@ -33,33 +80,4 @@ def compose_log_message(
     return LOG_MESSAGE.format(working_dir=working_dir, file=file, msg=message)
 
 
-def set_console_logger(log: logging.Logger, log_level: str) -> None:
-    """Sets up console logger
-
-    Args:
-        log (logging.Logger): Existing instance of logger to connect to.
-        log_level (str): Console output log level.
-    """
-    ch = logging.StreamHandler()
-    ch.setFormatter(LOCAL_LOG_FORMATTER)
-    ch.setLevel(log_level)
-    log.addHandler(ch)
-
-    log.info("Console handler added successfully")
-
-
-def set_file_logger(log: logging.Logger, log_level: str, log_file: str | None) -> None:
-    """Sets up file logger
-
-    Args:
-        log (logging.Logger): Existing instance of logger to connect to.
-        log_level (str): Console output log level.
-        log_file (str | None, optional): Logger file output path.
-    """
-    fh = TimedRotatingFileHandler(log_file, when="midnight", utc=True)
-    fh.setLevel(log_level)
-    fh.setFormatter(LOCAL_LOG_FORMATTER)
-
-    log.addHandler(fh)
-
-    # log.info("File handler added successfully, level:", log_level)
+logger, log = get_global_logger(level="DEBUG")

@@ -16,7 +16,9 @@ from config import (
     SPS,
 )
 from concat.hdf import H5File
-from log.logger import set_file_logger, compose_log_message, set_logger
+
+# from log.logger import set_file_logger, compose_log_message, set_logger
+from log.logger import log, compose_log_message
 from concat.status import (
     get_dirs,
     get_queue,
@@ -249,7 +251,7 @@ def concat_files(
             files (list): Input list
 
         Returns:
-            tuple[list, list]: odd list, even list of filenamess
+            tuple[list, list]: odd list, even list of filenames
         """
         files_major: list[str] = files[::2][::-1]
         files_minor: list[str] = files[1::2][::-1]
@@ -364,18 +366,12 @@ def concat_files(
 
 
 def main():
-    global log
-    # Set up global logger
-    log = set_logger("CONCAT", global_concat_log=True, global_log_level="DEBUG")
+    # log = set_logger("CONCAT", global_concat_log=True, global_log_level="DEBUG")
     start_time = datetime.now(tz=pytz.UTC)
 
     # Get dirs to work with from provided PATH
     dirs = get_dirs(filedir_r=PATH)
     for working_dir in dirs:
-        # Set up local logger to separate directories
-        set_file_logger(
-            log=log, log_level="DEBUG", log_file=os.path.join(PATH, working_dir, "log")
-        )
         proc_status = False
         while proc_status is not True:
             proc_status = concat_files(curr_dir=working_dir)
@@ -396,7 +392,6 @@ def main():
                 # Remove start_chunk_time and total_unit_size
                 # to continue processing from new chunk upon error
                 reset_chunks(os.path.join(PATH, working_dir))
-
     end_time = datetime.now(tz=pytz.UTC)
     print("Code finished in:", end_time - start_time)
 

@@ -1,11 +1,7 @@
 from concat.main import main
 from log.telegram import send_telegram_error
-from log.logger import set_logger, set_console_logger
-
+from log.logger import log
 import traceback
-
-log = set_logger("MAIN", global_concat_log=True)
-set_console_logger(log, log_level="ERROR")
 
 try:
     main()

@@ -6,9 +6,7 @@ import datetime
 
 from config import PATH
 
-from log.logger import compose_log_message, set_logger
-
-log = set_logger("STATUS", global_concat_log=True)
+from log.logger import compose_log_message, log
 
 
 # @deal.post(lambda x: type(x) is list)
