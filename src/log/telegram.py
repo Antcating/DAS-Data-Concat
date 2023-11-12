@@ -1,4 +1,5 @@
 from contextlib import nullcontext
+import requests
 import telebot
 import configparser
 
@@ -43,7 +44,10 @@ def send_telegram_error(message: str):
             bot = get_bot()
             channel = get_channel()
             if bot and channel:
-                bot.send_message(channel, message)
+                try:
+                    bot.send_message(channel, message)
+                except requests.exceptions.ConnectionError:
+                    print("Telegram log error failed: No connection established")
     except KeyError:
         print("Telegram status is uncertain or not provided")
         return
