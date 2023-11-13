@@ -1,3 +1,8 @@
+"""
+This module contains the H5File class which is the main class for h5 processing.
+It reads an h5 file and unpacks the packet time and actual data from the packet.
+It also checks if the h5 file fits the requirements to be concatenated.
+"""
 from datetime import datetime
 import pytz
 import h5py

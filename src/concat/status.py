@@ -1,7 +1,5 @@
 import os
 import json
-
-# import deal
 import datetime
 
 from config import PATH
@@ -91,13 +89,14 @@ def save_status(
     start_chunk_time: float,
     processed_time: int,
 ):
-    """Writes last processed file's name, total_unit_size and start_chunk_time
+    """
+    Writes last processed file's name, total_unit_size and start_chunk_time
     to {date}/.last
 
     Args:
-        working_path_abs (str): absolute PATH to working dir
+        filedir_r (str): relative PATH to working dir
         last_filename (str): last processed file's name
-        last_filedir_r: last processed working dir
+        last_filedir_r (str): last processed working dir
         start_chunk_time (float): time of the beginning of the first chunk
         processed_time (int): size of the last chunk including file's data
     """
@@ -128,17 +127,36 @@ def save_status(
             status_file.write(status_vars_n)
 
 
-# @deal.post(lambda *args: type(*args) is tuple)
-# @deal.pre(lambda filepath_r: type(filepath_r) is str)
 def get_queue(filepath_r: str):
-    """Calculates files that are left to process in directory
+    """
+    Calculates files that are left to process in directory
     Also calculates several necessary vars to proceed with concat
 
     Args:
-        absolute_path (str): absolute PATH to the working dir
+        filepath_r (str): absolute PATH to the working dir
+
+    Returns:
+        tuple: A tuple containing:
+            - h5_files_list (list): A list of h5 files in the directory
+            - start_chunk_time (float): The start time of the first chunk in the dir
+            - processed_time (int): The total time processed so far
+            - last_timestamp (int): The timestamp of the last file processed
     """
 
     def set_defaults(last_filename: str = None) -> tuple:
+        """
+        Sets default values for the variables used in get_queue
+
+        Args:
+            last_filename (str): The name of the last file processed
+
+        Returns:
+            tuple: A tuple containing:
+                - h5_files_list (list): A list of h5 files in the directory
+                - start_chunk_time (float): The start time of the chunk in the dir
+                - processed_time (int): The total time processed so far
+                - last_timestamp (int): The timestamp of the last file processed
+        """
         h5_files_list: list[str] = get_h5_files(
             dir_path_r=filepath_r, last_filename=last_filename
         )

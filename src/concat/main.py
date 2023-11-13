@@ -1,3 +1,10 @@
+"""
+This module contains functions for concatenating
+HDF5 files containing data from a receiver.
+The main function is `concat_files`, which takes a directory path
+as input and concatenates all HDF5 files in that directory.
+The concatenated data is saved in new HDF5 files, with one file per day.
+"""
 import os
 
 # import deal
