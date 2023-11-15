@@ -1,35 +1,29 @@
 import configparser
 from os.path import isdir
 
-config = configparser.ConfigParser()
-config.read("config.ini", encoding="UTF-8")
+config_dict = configparser.ConfigParser()
+config_dict.read("config.ini", encoding="UTF-8")
 
 #
 # CONCATENATION CHARACTERISTICS
 #
 # Difference between PACKET and SAVE times
-TIME_DIFF_THRESHOLD = float(config["CONSTANTS"]["TIME_DIFF_THRESHOLD"])
-DATA_LOSE_THRESHOLD = int(config["CONSTANTS"]["DATA_LOSE_THRESHOLD"])
+TIME_DIFF_THRESHOLD = float(config_dict["CONSTANTS"]["TIME_DIFF_THRESHOLD"])
+DATA_LOSE_THRESHOLD = int(config_dict["CONSTANTS"]["DATA_LOSE_THRESHOLD"])
 # Concatenated chunk size (in seconds)
-CHUNK_SIZE = int(config["CONSTANTS"]["CONCAT_TIME"])
+CHUNK_SIZE = int(config_dict["CONSTANTS"]["CONCAT_TIME"])
 
 # PACKET CHARACTERISTICS
-UNIT_SIZE = int(config["CONSTANTS"]["UNIT_SIZE"])
-SPS = int(config["CONSTANTS"]["SPS"])
-DX = float(config["CONSTANTS"]["DX"])
+UNIT_SIZE = int(config_dict["CONSTANTS"]["UNIT_SIZE"])
+SPS = int(config_dict["CONSTANTS"]["SPS"])
+DX = float(config_dict["CONSTANTS"]["DX"])
 
 TIME_SAMPLES = SPS * UNIT_SIZE
-SPACE_SAMPLES = int(config["CONSTANTS"]["SPACE_SAMPLES"])
-
-#
-# CLIENT CHARACTERISTICS
-#
-IP = config["CLIENT"]["IP"]
-PORT = config["CLIENT"]["PORT"]
+SPACE_SAMPLES = int(config_dict["CONSTANTS"]["SPACE_SAMPLES"])
 
 # PATHs to files and save
-LOCALPATH = config["PATH"]["LOCALPATH"]
-NASPATH_final = config["PATH"]["NASPATH_final"]
+LOCALPATH = config_dict["PATH"]["LOCALPATH"]
+NASPATH_final = config_dict["PATH"]["NASPATH_final"]
 
 if isdir(LOCALPATH):
     PATH = LOCALPATH
