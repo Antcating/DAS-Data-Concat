@@ -1,6 +1,6 @@
 import logging
 import os
-from config import PATH, config_dict
+from config import SAVE_PATH, config_dict
 
 # Create formatter 
 formatter = logging.Formatter('%(asctime)s.%(msecs)03d | %(name)s | %(levelname)s | %(message)s',
@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 logger.setLevel(LOG_LEVEL)
 
 # Create file handler
-file_handler = logging.FileHandler(os.path.join(PATH, "log"))
-file_handler.setLevel(logging.DEBUG)
+file_handler = logging.FileHandler(os.path.join(SAVE_PATH, "log"))
+file_handler.setLevel(LOG_LEVEL)
 
 # Set formats and add the handlers to the logger
 file_handler.setFormatter(formatter)
