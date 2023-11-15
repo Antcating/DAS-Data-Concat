@@ -61,7 +61,8 @@ class H5File:
                 return True
             except ValueError:
                 log.exception(
-                    f"Unable to read file's packet_time, unable to use it: {self.file_name}"
+                    f"Unable to read file's packet_time, unable to use it: "
+                    f"{self.file_name}"
                 )
                 return False
 
@@ -76,7 +77,8 @@ class H5File:
                 return True
             except KeyError:
                 log.exception(
-                    f"Unable to unpack data from h5 file, dataset missing: {self.file_name}"
+                    f"Unable to unpack data from h5 file, dataset missing: "
+                    f"{self.file_name}"
                 )
                 return False
 
@@ -86,12 +88,12 @@ class H5File:
     def check_h5(self, last_timestamp: float) -> bool:
         """Checks h5 file if it fits the requirements to be concatenated
 
-                Args:
-                    last_timestamp (float): Timestamp from previous file.
-        Used to calculate time difference between adjoint packets and find lost packets
+        Args:
+            last_timestamp (float): Timestamp from previous file.
+                Used to calculate time difference between adjoint packets
 
-                Returns:
-                    bool: Status boolean. True if everything OK, False otherwise
+        Returns:
+            bool: Status boolean. True if everything OK, False otherwise
         """
         try:
             # DATA lost warning
@@ -109,7 +111,8 @@ class H5File:
                 or self.dset.shape[1] != SPACE_SAMPLES
             ):
                 log.warning(
-                    f"Packet {self.file_name} has unexpected shape: {self.dset.shape}"
+                    f"Packet {self.file_name} has unexpected shape: "
+                    f"{self.dset.shape}"
                 )
                 self.unpack_stat = False
                 return self.unpack_stat, "downsampling"

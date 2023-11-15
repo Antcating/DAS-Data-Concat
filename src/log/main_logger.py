@@ -2,9 +2,11 @@ import logging
 import os
 from config import SAVE_PATH, config_dict
 
-# Create formatter 
-formatter = logging.Formatter('%(asctime)s.%(msecs)03d | %(name)s | %(levelname)s | %(message)s',
-                              datefmt="%Y-%m-%dT%H:%M:%S")
+# Create formatter
+formatter = logging.Formatter(
+    "%(asctime)s.%(msecs)03d | %(name)s | %(levelname)s | %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
 
 # Create logger object
 if config_dict["LOG"]["LOG_LEVEL"]:
@@ -30,7 +32,7 @@ if CONSOLE_LOG == "True":
         CONSOLE_LOG_LEVEL = config_dict["LOG"]["CONSOLE_LOG_LEVEL"]
     else:
         CONSOLE_LOG_LEVEL = "INFO"
-    
+
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(CONSOLE_LOG_LEVEL)
 
@@ -40,6 +42,7 @@ if CONSOLE_LOG == "True":
 TELEGRAM_LOG = config_dict["TELEGRAM"]["TELEGRAM_LOG"]
 if TELEGRAM_LOG == "True":
     from log.telegram_handler import TelegramBotHandler
+
     if config_dict["TELEGRAM"]["channel"]:
         telegram_handler = TelegramBotHandler(config_dict["TELEGRAM"]["channel"])
         telegram_handler.setFormatter(formatter)

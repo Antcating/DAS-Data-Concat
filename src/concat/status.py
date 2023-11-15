@@ -45,7 +45,7 @@ class FileManager:
 
     def get_sorted_dirs(self) -> list:
         """
-        Returns a sorted list of directories in the specified path, excl today's directory.
+        Returns a sorted list of dirs in the specified path, excl today's directory.
 
         Returns:
             A list of directory names (strings).
@@ -67,9 +67,7 @@ class FileManager:
             )
 
         else:
-            log.warning(
-                f"Unable to scan {filedir_abs} for dirs except today's dir: dir does not exist"
-            )
+            log.warning(f"Unable to scan {filedir_abs} for dirs: dir does not exist")
             return []
 
     def get_sorted_h5_files(

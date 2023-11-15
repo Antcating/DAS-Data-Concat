@@ -10,6 +10,7 @@ else:
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
+
 class TelegramBotHandler(logging.Handler):
     def __init__(self, chat_id):
         super().__init__()

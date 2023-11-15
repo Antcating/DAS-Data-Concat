@@ -9,4 +9,3 @@ except Exception as err:
         + str(err)
     )
     log.exception(msg)
-

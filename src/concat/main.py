@@ -19,6 +19,12 @@ from typing import Union, Tuple
 
 
 class Concatenator:
+    """Class responsible for concatenating H5 files into chunks.
+
+    Attributes:
+        file_manager (FileManager): Object responsible for managing H5 files.
+    """
+
     def __init__(self):
         self.file_manager = FileManager()
 
@@ -35,7 +41,6 @@ class Concatenator:
             h5_file (H5File): Object of the file to be appended
             processed_time (int): Processed time since start of the chunk
             start_chunk_time (float): Timestamp of the chunk to append to
-            saving_dir (str): Currently processed directory
 
         Returns:
             tuple[chunk_time, processed_time]: updated starting
@@ -62,7 +67,7 @@ class Concatenator:
                 log.exception(f"Critical error while saving last chunk: {err}")
 
         chunk_time = start_chunk_time
-        # Getting chunk's Dataset according to provided timestamp
+        # Get chunk's Dataset according to provided timestamp
         dset_concat = self.file_manager.require_h5(chunk_time)
 
         log.debug(f"Concatenating {h5_file.file_name}")
@@ -88,9 +93,7 @@ class Concatenator:
             dset_concat = self.file_manager.require_h5(chunk_time)
             # If packet has carry to be appended to new chunk
             if h5_file.dset_carry is not None:
-                log.info(
-                    f"Carry with shape {h5_file.dset_carry.shape} has been used in the next chunk"
-                )
+                log.info(f"Carry with shape {h5_file.dset_carry.shape} has been used")
                 dset_concat = concat_h5(
                     dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
                 )
@@ -297,11 +300,11 @@ class Concatenator:
                 proc_status = self.concat_files(curr_dir=working_dir)
                 if proc_status:
                     log.info(
-                        f"Concatenation of chunks {working_dir} was finished with success"
+                        f"Concat of chunks {working_dir} was finished with success"
                     )
                 else:
                     log.critical(
-                        f"Concatenation of chunks {working_dir} was finished prematurely"
+                        f"Concat of chunks {working_dir} was finished prematurely"
                     )
                     # Remove start_chunk_time and total_unit_size
                     # to continue processing from new chunk upon error
