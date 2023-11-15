@@ -45,7 +45,7 @@ def require_h5(chunk_time: float) -> Dataset | None:
 
     # Calculation of the date in YYYYMMDD format
     # based on the chunk time provided in UNIX timestamp
-    # save_date_dt = datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
+    save_date_dt = datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
     save_date = datetime.strftime(save_date_dt, "%Y%m%d")
     filename = save_date + "_" + str(chunk_time) + ".h5"
 
