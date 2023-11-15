@@ -4,23 +4,21 @@ import datetime
 
 from config import PATH
 
-from log.logger import compose_log_message, log
+from log.main_logger import logger as log
 
 
 # @deal.post(lambda x: type(x) is list)
-def get_dirs(filedir_r: str) -> list:
-    """Returns dirs in path except dir named by today's date in format YYYYMMDD
-
-    Args:
-        absolute_path (str): path to dir to scan to dirs
+def get_dirs() -> list:
+    """
+    Returns a sorted list of directories in the specified path, excl today's directory.
 
     Returns:
-        list: list of dirs in the path (-today). Format YYYYMMDD
+        A list of directory names (strings).
     """
-    filedir_abs: str = os.path.join(PATH, filedir_r)
+    filedir_abs: str = PATH
     if os.path.isdir(filedir_abs):
         log.debug(
-            compose_log_message(working_dir=filedir_r, message="Reading directory")
+            f"Scanning {filedir_abs} for dirs except today's dir"
         )
 
         today_datetime: datetime.datetime = datetime.datetime.now(tz=datetime.UTC)
@@ -37,9 +35,7 @@ def get_dirs(filedir_r: str) -> list:
 
     else:
         log.warning(
-            compose_log_message(
-                working_dir=filedir_r, message="Directory does not exists"
-            )
+            f"Unable to scan {filedir_abs} for dirs except today's dir: dir does not exist"
         )
         return []
 
@@ -72,9 +68,7 @@ def get_h5_files(dir_path_r: str, last_filename: str | None = None) -> list[str]
         return sorted(file_names)
     except FileNotFoundError:
         log.warning(
-            compose_log_message(
-                working_dir=dir_path_r, message="Directory does not exist"
-            )
+            f"Unable to scan {dir_path_r} for h5 files: dir does not exist"
         )
         return []
     except ValueError:
@@ -218,7 +212,7 @@ def reset_chunks(file_dir_r: str) -> bool:
     """
 
     log.info(
-        compose_log_message(message="Reset chunk tracking to start from new chunk")
+        f"Resetting chunk tracking to start from new chunk in {file_dir_r}"
     )
     status_filepath_r = os.path.join(PATH, file_dir_r, ".last")
     if os.path.isfile(status_filepath_r):

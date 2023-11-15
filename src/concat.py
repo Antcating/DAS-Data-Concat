@@ -1,14 +1,11 @@
 from concat.main import main
-from log.telegram import send_telegram_error
-from log.logger import log
-import traceback
+from log.main_logger import logger as log
 
 try:
     main()
-except Exception:
+except Exception as err:
     msg = (
         "Unexpected error occurred during scheduled concatenation. Details:\n\n"
-        + traceback.format_exc()
+        + str(err)
     )
-    send_telegram_error(msg)
     log.exception(msg)

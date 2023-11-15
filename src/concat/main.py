@@ -24,8 +24,7 @@ from config import (
 )
 from concat.hdf import H5File
 
-# from log.logger import set_file_logger, compose_log_message, set_logger
-from log.logger import log, compose_log_message
+from log.main_logger import logger as log
 from concat.status import (
     get_dirs,
     get_queue,
@@ -46,7 +45,7 @@ def require_h5(chunk_time: float) -> Dataset | None:
 
     # Calculation of the date in YYYYMMDD format
     # based on the chunk time provided in UNIX timestamp
-    save_date_dt = datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
+    # save_date_dt = datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
     save_date = datetime.strftime(save_date_dt, "%Y%m%d")
     filename = save_date + "_" + str(chunk_time) + ".h5"
 
@@ -100,29 +99,13 @@ def concat_to_chunk_by_time(
             dset_concat_to[-dset_concat_from.shape[0] :] = dset_concat_from
             return dset_concat_to
         except Exception as err:
-            # If we have critical error with saving chunk,
-            # We may want to preserve last chunk data to investigate
-            log.critical(
-                compose_log_message(
-                    working_dir=saving_dir,
-                    file=h5_file.file_name,
-                    message="Critical error while saving last chunk,\
-preserving last chunk. Error"
-                    + str(err),
-                )
-            )
-
-    log.debug(
-        compose_log_message(
-            working_dir=saving_dir,
-            file=h5_file.file_name,
-            message=f"Concatenating {h5_file.file_name}",
-        )
-    )
+            log.exception(f"Critical error while saving last chunk: {err}")
 
     chunk_time = start_chunk_time
     # Getting chunk's Dataset according to provided timestamp
     dset_concat = require_h5(chunk_time)
+
+    log.debug(f"Concatenating {h5_file.file_name}")
 
     # If Dataset was splitted, we would take only splitted part of the packet
     if h5_file.dset_split is not None:
@@ -133,16 +116,10 @@ preserving last chunk. Error"
         dset_concat = concat_h5(
             dset_concat_from=h5_file.dset, dset_concat_to=dset_concat
         )
+    log.debug(f"Concat has shape: {dset_concat.shape}")
     # Update processed time
     processed_time += int(h5_file.split_time)
 
-    log.debug(
-        compose_log_message(
-            working_dir=saving_dir,
-            file=h5_file.file_name,
-            message=f"Concat has shape:  {dset_concat.shape}",
-        )
-    )
     # Flip next day/chunk
     if h5_file.is_day_end or processed_time % CHUNK_SIZE == 0:
         # Get timestamp for next chunk
@@ -152,22 +129,12 @@ preserving last chunk. Error"
         # If packet has carry to be appended to new chunk
         if h5_file.dset_carry is not None:
             log.info(
-                compose_log_message(
-                    working_dir=saving_dir,
-                    file=h5_file.file_name,
-                    message="Carry has been used in the next chunk",
-                )
+                f"Carry with shape {h5_file.dset_carry.shape} has been used in the next chunk"
             )
             dset_concat = concat_h5(
                 dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
             )
-            log.debug(
-                compose_log_message(
-                    working_dir=saving_dir,
-                    file=h5_file.file_name,
-                    message=f"Next day Concat has shape:  {dset_concat.shape}",
-                )
-            )
+            log.debug(f"Next chunk concat shape: {dset_concat.shape}.")
             processed_time = UNIT_SIZE - h5_file.split_time
         if h5_file.is_day_end:
             # Save status data to next day for processing
@@ -221,20 +188,11 @@ def get_next_h5(
         # We tested both major and minor files. Both corrupted in some way
         if is_minor is False:
             log.critical(
-                compose_log_message(
-                    working_dir=working_dir_r,
-                    message="Data has a gap. Closing concat chunk",
-                )
+                f"Data has gap in {working_dir_r}. Last timestamp: {last_timestamp}"
             )
             return (None, False, "gap")
 
-    log.debug(
-        compose_log_message(
-            working_dir=working_dir_r,
-            file=h5_file.file_name,
-            message=f"Using {'major' if is_major else 'minor'}",
-        )
-    )
+    log.debug(f"Using {'major' if is_major else 'minor'}")
     return (h5_file, is_major, h5_unpack_error)
 
 
@@ -377,24 +335,18 @@ def main():
     start_time = datetime.now(tz=pytz.UTC)
 
     # Get dirs to work with from provided PATH
-    dirs = get_dirs(filedir_r=PATH)
+    dirs = get_dirs()
     for working_dir in dirs:
         proc_status = False
         while proc_status is not True:
             proc_status = concat_files(curr_dir=working_dir)
             if proc_status:
                 log.info(
-                    compose_log_message(
-                        working_dir=working_dir,
-                        message="Saving finished with success",
-                    )
+                    f"Concatenation of chunks {working_dir} was finished with success"
                 )
             else:
                 log.critical(
-                    compose_log_message(
-                        working_dir=working_dir,
-                        message="Concatenation was finished prematurely",
-                    )
+                    f"Concatenation of chunks {working_dir} was finished prematurely"
                 )
                 # Remove start_chunk_time and total_unit_size
                 # to continue processing from new chunk upon error

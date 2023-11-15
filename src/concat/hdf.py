@@ -9,7 +9,7 @@ import h5py
 from os.path import join
 
 from config import PATH, DATA_LOSE_THRESHOLD, TIME_SAMPLES, SPACE_SAMPLES
-from log.logger import compose_log_message, log
+from log.main_logger import logger as log
 
 
 class H5File:
@@ -61,11 +61,7 @@ class H5File:
                 return True
             except ValueError:
                 log.exception(
-                    compose_log_message(
-                        working_dir=self.file_dir,
-                        file=self.file_name,
-                        message="Unable to read file's packet_time, unable to use it",
-                    )
+                    f"Unable to read file's packet_time, unable to use it: {self.file_name}"
                 )
                 return False
 
@@ -80,11 +76,7 @@ class H5File:
                 return True
             except KeyError:
                 log.exception(
-                    compose_log_message(
-                        working_dir=self.file_dir,
-                        file=self.file_name,
-                        message="Unable to unpack data from h5 file, dataset missing",
-                    )
+                    f"Unable to unpack data from h5 file, dataset missing: {self.file_name}"
                 )
                 return False
 
@@ -106,12 +98,7 @@ class H5File:
             packet_diff = self.packet_time - last_timestamp
             if last_timestamp != 0 and packet_diff > DATA_LOSE_THRESHOLD:
                 log.warning(
-                    compose_log_message(
-                        working_dir=self.file_dir,
-                        file=self.file_name,
-                        message=f"\
-Possibly missing data: {last_timestamp+4}->{self.packet_time-2}",
-                    )
+                    f"Possible data lost: {last_timestamp+4}->{self.packet_time-2}"
                 )
                 self.unpack_stat = False
                 return self.unpack_stat, "missing"
@@ -122,12 +109,7 @@ Possibly missing data: {last_timestamp+4}->{self.packet_time-2}",
                 or self.dset.shape[1] != SPACE_SAMPLES
             ):
                 log.warning(
-                    compose_log_message(
-                        working_dir=self.file_dir,
-                        file=self.file_name,
-                        message=f"\
-Packet {self.file_name} has unexpected shape: {self.dset.shape}",
-                    )
+                    f"Packet {self.file_name} has unexpected shape: {self.dset.shape}"
                 )
                 self.unpack_stat = False
                 return self.unpack_stat, "downsampling"
