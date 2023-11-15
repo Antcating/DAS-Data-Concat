@@ -147,16 +147,20 @@ class Concatenator:
 
         if is_major is False:
             # Checking next minor list file
-            minor_filename = h5_minor_list[-1]
-            h5_file = H5File(file_dir=working_dir_r, file_name=minor_filename)
-            is_minor, h5_unpack_error = h5_file.check_h5(last_timestamp=last_timestamp)
-
-            # We tested both major and minor files. Both corrupted in some way
-            if is_minor is False:
-                log.critical(
-                    f"Data has gap in {working_dir_r}. Last timestamp: {last_timestamp}"
+            if len(h5_minor_list) > 0:
+                minor_filename = h5_minor_list[-1]
+                h5_file = H5File(file_dir=working_dir_r, file_name=minor_filename)
+                is_minor, h5_unpack_error = h5_file.check_h5(
+                    last_timestamp=last_timestamp
                 )
-                return (None, False, "gap")
+
+                # We tested both major and minor files. Both corrupted in some way
+                if is_minor is False:
+                    log.critical(
+                        f"Data has gap in {working_dir_r}."
+                        f"Last timestamp: {last_timestamp}"
+                    )
+                    return (None, False, "gap")
 
         log.debug(f"Using {'major' if is_major else 'minor'}")
         return (h5_file, is_major, h5_unpack_error)
