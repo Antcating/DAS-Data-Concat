@@ -1,11 +1,12 @@
 import os
 import json
 import datetime
+from uu import Error
 
 import numpy as np
 import pytz
 
-from config import PATH, SAVE_PATH, SPACE_SAMPLES
+from config import PATH, SAVE_PATH
 
 from log.main_logger import logger as log
 from h5py import File, Dataset
@@ -16,7 +17,7 @@ class FileManager:
         self.path = path
         self.save_path = save_path
 
-    def require_h5(self, chunk_time: float) -> Dataset | None:
+    def require_h5(self, chunk_time: float, space_samples: int) -> Dataset | None:
         """Creates/Checks h5 file
 
         Args:
@@ -37,8 +38,8 @@ class FileManager:
 
         return file.require_dataset(
             "data_down",
-            (0, SPACE_SAMPLES),
-            maxshape=(None, SPACE_SAMPLES),
+            (0, space_samples),
+            maxshape=(None, space_samples),
             chunks=True,
             dtype=np.float32,
         )
@@ -237,3 +238,11 @@ class FileManager:
             with open(status_filepath_r, "w", encoding="UTF-8") as status_file:
                 status_vars: dict = json.dump(status_vars, status_file)
         return True
+
+    def read_attrs(self, working_dir: str, filename: str = "attrs.json"):
+        # Read attributes from json file from working dir
+        try:
+            attrs = json.load(open(os.path.join(self.path, working_dir, filename), "r"))
+            return attrs
+        except FileNotFoundError:
+            raise Error(f"File {filename} not found in {working_dir}")

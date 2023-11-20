@@ -14,12 +14,8 @@ DATA_LOSE_THRESHOLD = int(config_dict["CONSTANTS"]["DATA_LOSE_THRESHOLD"])
 CHUNK_SIZE = int(config_dict["CONSTANTS"]["CONCAT_TIME"])
 
 # PACKET CHARACTERISTICS
-UNIT_SIZE = int(config_dict["CONSTANTS"]["UNIT_SIZE"])
 SPS = int(config_dict["CONSTANTS"]["SPS"])
 DX = float(config_dict["CONSTANTS"]["DX"])
-
-TIME_SAMPLES = SPS * UNIT_SIZE
-SPACE_SAMPLES = int(config_dict["CONSTANTS"]["SPACE_SAMPLES"])
 
 # PATHs to files and save
 LOCALPATH = config_dict["PATH"]["LOCALPATH"]

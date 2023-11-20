@@ -8,14 +8,16 @@ import pytz
 import h5py
 from os.path import join
 
-from config import PATH, DATA_LOSE_THRESHOLD, TIME_SAMPLES, SPACE_SAMPLES
+from config import PATH, DATA_LOSE_THRESHOLD
 from log.main_logger import logger as log
 
 
 class H5File:
     """Main class for h5 processing"""
 
-    def __init__(self, file_dir: str, file_name: str) -> None:
+    def __init__(
+        self, file_dir: str, file_name: str, space_samples: int, time_samples: int
+    ) -> None:
         try:
             self.file = h5py.File(
                 join(PATH, file_dir, file_name), "r", rdcc_nbytes=2 * 1024 * 4
@@ -25,6 +27,9 @@ class H5File:
 
         self.file_name: str = file_name
         self.file_dir: str = file_dir
+
+        self.space_samples: int = space_samples
+        self.time_samples: int = time_samples
 
         # Values to be calculated
         self.packet_time: float = None
@@ -107,8 +112,8 @@ class H5File:
 
             # Shape check
             if (
-                self.dset.shape[0] != TIME_SAMPLES
-                or self.dset.shape[1] != SPACE_SAMPLES
+                self.dset.shape[0] != self.time_samples
+                or self.dset.shape[1] != self.space_samples
             ):
                 log.warning(
                     f"Packet {self.file_name} has unexpected shape: "

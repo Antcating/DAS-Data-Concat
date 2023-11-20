@@ -1,12 +1,11 @@
-# import deal
 from h5py import Dataset
 from datetime import datetime, timedelta
+import numpy as np
 import pytz
 
 from config import (
     TIME_DIFF_THRESHOLD,
     CHUNK_SIZE,
-    UNIT_SIZE,
     SPS,
 )
 from concat.hdf import H5File
@@ -24,6 +23,10 @@ class Concatenator:
     """
 
     def __init__(self):
+        self.space_samples = 0
+        self.time_samples = 0
+        self.unit_size = 0
+
         self.file_manager = FileManager()
 
     def concat_to_chunk_by_time(
@@ -66,7 +69,9 @@ class Concatenator:
 
         chunk_time = start_chunk_time
         # Get chunk's Dataset according to provided timestamp
-        dset_concat = self.file_manager.require_h5(chunk_time)
+        dset_concat = self.file_manager.require_h5(
+            chunk_time, space_samples=self.space_samples
+        )
 
         log.debug(f"Concatenating {h5_file.file_name}")
 
@@ -88,7 +93,9 @@ class Concatenator:
             # Get timestamp for next chunk
             chunk_time = h5_file.packet_time + h5_file.split_time
             # Get newly generated chunk's Dataset
-            dset_concat = self.file_manager.require_h5(chunk_time)
+            dset_concat = self.file_manager.require_h5(
+                chunk_time, space_samples=self.space_samples
+            )
             # If packet has carry to be appended to new chunk
             if h5_file.dset_carry is not None:
                 log.info(f"Carry with shape {h5_file.dset_carry.shape} has been used")
@@ -96,7 +103,7 @@ class Concatenator:
                     dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
                 )
                 log.debug(f"Next chunk concat shape: {dset_concat.shape}.")
-                processed_time = UNIT_SIZE - h5_file.split_time
+                processed_time = self.unit_size - h5_file.split_time
             if h5_file.is_day_end:
                 # Save status data to next day for processing
                 self.file_manager.save_status(
@@ -137,7 +144,12 @@ class Concatenator:
         if len(h5_major_list) > 0:
             # Checking next major list file
             major_filename = h5_major_list[-1]
-            h5_file = H5File(file_dir=working_dir_r, file_name=major_filename)
+            h5_file = H5File(
+                file_dir=working_dir_r,
+                file_name=major_filename,
+                space_samples=self.space_samples,
+                time_samples=self.time_samples,
+            )
             is_major, h5_unpack_error = h5_file.check_h5(last_timestamp=last_timestamp)
         else:
             # If no major files left
@@ -147,7 +159,12 @@ class Concatenator:
             # Checking next minor list file
             if len(h5_minor_list) > 0:
                 minor_filename = h5_minor_list[-1]
-                h5_file = H5File(file_dir=working_dir_r, file_name=minor_filename)
+                h5_file = H5File(
+                    file_dir=working_dir_r,
+                    file_name=minor_filename,
+                    space_samples=self.space_samples,
+                    time_samples=self.time_samples,
+                )
                 is_minor, h5_unpack_error = h5_file.check_h5(
                     last_timestamp=last_timestamp
                 )
@@ -188,6 +205,17 @@ class Concatenator:
             return files_major, files_minor
 
         working_dir_r = curr_dir
+        # read attrs.json from current directory
+        attrs = self.file_manager.read_attrs(working_dir_r)
+
+        self.space_samples = int(
+            np.ceil((attrs["index"][1] + 1) / attrs["down_factor_space"])
+        )
+        self.time_samples = int(
+            np.ceil((attrs["index"][3] + 1) / attrs["down_factor_time"])
+        )
+        self.unit_size = int(attrs["unit_size"])
+
         # Getting all necessary environmental vars from status file (if exists)
         #  otherwise return default values
         (
@@ -222,7 +250,7 @@ class Concatenator:
             till_next_chunk = CHUNK_SIZE - ((CHUNK_SIZE + processed_time) % CHUNK_SIZE)
 
             # If time to split chunk to next day
-            if till_midnight < UNIT_SIZE:
+            if till_midnight < self.unit_size:
                 split_offset = int(SPS * till_midnight)
 
                 h5_file.dset_split = h5_file.dset[:split_offset, :]
@@ -253,7 +281,7 @@ class Concatenator:
                     h5_file.dset_split = h5_file.dset[SPS * packet_diff :, :]
                     h5_file.split_time = packet_diff
                 else:
-                    h5_file.split_time = UNIT_SIZE
+                    h5_file.split_time = self.unit_size
 
             # Main concatenation entry point
             start_chunk_time, processed_time = self.concat_to_chunk_by_time(
