@@ -1,5 +1,3 @@
-import os
-
 # import deal
 from h5py import Dataset
 from datetime import datetime, timedelta
@@ -300,18 +298,25 @@ class Concatenator:
         dirs = self.file_manager.get_sorted_dirs()
         for working_dir in dirs:
             proc_status = False
-            while proc_status is not True:
+            retries = 3
+            while proc_status is not True and retries > 0:
                 proc_status = self.concat_files(curr_dir=working_dir)
                 if proc_status:
+                    retries = 3
                     log.info(
                         f"Concat of chunks {working_dir} was finished with success"
                     )
                 else:
+                    retries -= 1
                     log.critical(
                         f"Concat of chunks {working_dir} was finished prematurely"
                     )
+                    if retries == 0:
+                        log.critical(
+                            f"Concat of chunks {working_dir} was finished with errors"
+                        )
                     # Remove start_chunk_time and total_unit_size
                     # to continue processing from new chunk upon error
-                    self.file_manager.reset_chunks(os.path.join(self.path, working_dir))
+                    self.file_manager.reset_chunks(working_dir)
         end_time = datetime.now(tz=pytz.UTC)
         print("Code finished in:", end_time - start_time)
