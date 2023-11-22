@@ -38,8 +38,8 @@ class FileManager:
 
         return file.require_dataset(
             "data_down",
-            (0, space_samples),
-            maxshape=(None, space_samples),
+            (space_samples, 0),
+            maxshape=(space_samples, None),
             chunks=True,
             dtype=np.float32,
         )
@@ -116,7 +116,6 @@ class FileManager:
         last_filename: str,
         last_filedir_r: str,
         start_chunk_time: float,
-        processed_time: int,
     ):
         """
         Writes last processed file's name, total_unit_size and start_chunk_time
@@ -134,7 +133,6 @@ class FileManager:
                 "last_filename": last_filename,
                 "last_filedir": last_filedir_r,
                 "start_chunk_time": start_chunk_time,
-                "processed_time": processed_time,
             }
         )
 
@@ -193,9 +191,8 @@ class FileManager:
                 if h5_files_list
                 else 0
             )
-            processed_time = 0
             last_timestamp = 0
-            return h5_files_list, start_chunk_time, processed_time, last_timestamp
+            return h5_files_list, start_chunk_time, last_timestamp
 
         status_filepath = os.path.join(self.path, filepath_r, ".last")
         if os.path.isfile(status_filepath):
@@ -204,7 +201,6 @@ class FileManager:
                 last_filename = status_vars.get("last_filename")
                 last_filedir_r = status_vars.get("last_filedir")
                 start_chunk_time = status_vars.get("start_chunk_time")
-                processed_time = status_vars.get("processed_time")
 
             if start_chunk_time is not None:
                 file_names_tbd = self.get_sorted_h5_files(
@@ -213,7 +209,7 @@ class FileManager:
                 last_timestamp = float(
                     last_filename.split("_")[-1].rsplit(".", maxsplit=1)[0]
                 )
-                return file_names_tbd, start_chunk_time, processed_time, last_timestamp
+                return file_names_tbd, start_chunk_time, last_timestamp
             else:
                 return set_defaults(last_filename)
         return set_defaults()
@@ -233,7 +229,6 @@ class FileManager:
                 status_vars: dict = json.load(status_file)
 
             status_vars.pop("start_chunk_time", None)
-            status_vars.pop("processed_time", None)
 
             with open(status_filepath_r, "w", encoding="UTF-8") as status_file:
                 status_vars: dict = json.dump(status_vars, status_file)
@@ -243,6 +238,12 @@ class FileManager:
         # Read attributes from json file from working dir
         try:
             attrs = json.load(open(os.path.join(self.path, working_dir, filename), "r"))
+            self.write_attrs(attrs, working_dir)
             return attrs
         except FileNotFoundError:
             raise Error(f"File {filename} not found in {working_dir}")
+
+    def write_attrs(self, attrs: dict, working_dir: str):
+        # Write attributes to json file in save dir
+        with open(os.path.join(self.save_path, working_dir + ".json"), "w") as f:
+            json.dump(attrs, f)
