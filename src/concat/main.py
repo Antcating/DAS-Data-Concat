@@ -32,7 +32,6 @@ class Concatenator:
     def concat_to_chunk_by_time(
         self,
         h5_file: H5File,
-        processed_time: int,
         start_chunk_time: float,
     ) -> Tuple[float, int]:
         """Appends chunk with new data.
@@ -58,18 +57,25 @@ class Concatenator:
             Returns:
                 Dataset: Resized and appended dataset
             """
+            if dset_concat_from.shape[0] == 0:
+                return dset_concat_to
+            # print(dset_concat_from.shape, dset_concat_to.shape)
             try:
                 dset_concat_to.resize(
-                    dset_concat_to.shape[0] + dset_concat_from.shape[0], axis=0
+                    dset_concat_to.shape[1] + dset_concat_from.shape[0], axis=1
                 )
-                dset_concat_to[-dset_concat_from.shape[0] :] = dset_concat_from
+                # Appending transposed data to the end of the Dataset
+                # (Mekorot and Natgas datasets are transposed)
+                dset_concat_to[:, -dset_concat_from.shape[0] :] = np.transpose(
+                    dset_concat_from[()]
+                )
                 return dset_concat_to
             except Exception as err:
                 log.exception(f"Critical error while saving last chunk: {err}")
 
         chunk_time = start_chunk_time
         # Get chunk's Dataset according to provided timestamp
-        dset_concat = self.file_manager.require_h5(
+        dset_concat: Dataset = self.file_manager.require_h5(
             chunk_time, space_samples=self.space_samples
         )
 
@@ -85,11 +91,9 @@ class Concatenator:
                 dset_concat_from=h5_file.dset, dset_concat_to=dset_concat
             )
         log.debug(f"Concat has shape: {dset_concat.shape}")
-        # Update processed time
-        processed_time += int(h5_file.split_time)
 
         # Flip next day/chunk
-        if h5_file.is_day_end or processed_time % CHUNK_SIZE == 0:
+        if h5_file.is_day_end or h5_file.is_chunk_end:
             # Get timestamp for next chunk
             chunk_time = h5_file.packet_time + h5_file.split_time
             # Get newly generated chunk's Dataset
@@ -103,7 +107,6 @@ class Concatenator:
                     dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
                 )
                 log.debug(f"Next chunk concat shape: {dset_concat.shape}.")
-                processed_time = self.unit_size - h5_file.split_time
             if h5_file.is_day_end:
                 # Save status data to next day for processing
                 self.file_manager.save_status(
@@ -115,11 +118,10 @@ class Concatenator:
                         h5_file.packet_datetime + timedelta(days=1)
                     ).strftime("%Y%m%d"),
                     start_chunk_time=chunk_time,
-                    processed_time=processed_time,
                 )
-            return chunk_time, processed_time
+            return chunk_time
 
-        return chunk_time, processed_time
+        return chunk_time
 
     def get_next_h5(
         self,
@@ -221,7 +223,6 @@ class Concatenator:
         (
             h5_files_list,
             start_chunk_time,
-            processed_time,
             last_timestamp,
         ) = self.file_manager.get_queue(filepath_r=working_dir_r)
 
@@ -242,12 +243,16 @@ class Concatenator:
                 return False
 
             # Calculates time till next day (for day splitting)
-            next_date = h5_file.packet_datetime.replace(
+            start_day_datetime = h5_file.packet_datetime.replace(
                 hour=0, minute=0, second=0
-            ) + timedelta(days=1)
-            till_midnight = (next_date - h5_file.packet_datetime).seconds
+            )
+            next_day_datetime = start_day_datetime + timedelta(days=1)
 
-            till_next_chunk = CHUNK_SIZE - ((CHUNK_SIZE + processed_time) % CHUNK_SIZE)
+            from_day_start = (h5_file.packet_datetime - start_day_datetime).seconds
+            till_midnight = (next_day_datetime - h5_file.packet_datetime).seconds
+            till_next_chunk = int(
+                start_chunk_time + CHUNK_SIZE - h5_file.packet_datetime.timestamp()
+            )
 
             # If time to split chunk to next day
             if till_midnight < self.unit_size:
@@ -259,7 +264,6 @@ class Concatenator:
 
                 h5_file.is_day_end = True
                 h5_file.split_time = till_midnight
-
             # if end of the chunk is half of the packet
             # and is major or minor after major was skipped:
             # Split and take first half of the packet
@@ -280,13 +284,19 @@ class Concatenator:
                 if packet_diff < TIME_DIFF_THRESHOLD:
                     h5_file.dset_split = h5_file.dset[SPS * packet_diff :, :]
                     h5_file.split_time = packet_diff
+                elif from_day_start < self.unit_size / 2:
+                    # If packet is first in chunk and there no carry from previous chunk
+                    split_offset = int(SPS * from_day_start)
+                    start_chunk_time -= from_day_start
+                    h5_file.dset_split = h5_file.dset[-split_offset:, :]
+
+                    h5_file.split_time = from_day_start
                 else:
                     h5_file.split_time = self.unit_size
 
             # Main concatenation entry point
-            start_chunk_time, processed_time = self.concat_to_chunk_by_time(
+            start_chunk_time = self.concat_to_chunk_by_time(
                 h5_file=h5_file,
-                processed_time=processed_time,
                 start_chunk_time=start_chunk_time,
             )
 
@@ -297,7 +307,6 @@ class Concatenator:
                 last_filename=h5_file.file_name,
                 last_filedir_r=h5_file.file_dir,
                 start_chunk_time=start_chunk_time,
-                processed_time=processed_time,
             )
 
             # Cleaning the queue
@@ -319,6 +328,7 @@ class Concatenator:
             if h5_file.is_day_end:
                 return True
 
+            del h5_file  # Delete H5File object to free memory
         return True
 
     def run(self):
@@ -326,23 +336,16 @@ class Concatenator:
         dirs = self.file_manager.get_sorted_dirs()
         for working_dir in dirs:
             proc_status = False
-            retries = 3
-            while proc_status is not True and retries > 0:
+            while proc_status is not True:
                 proc_status = self.concat_files(curr_dir=working_dir)
                 if proc_status:
-                    retries = 3
                     log.info(
                         f"Concat of chunks {working_dir} was finished with success"
                     )
                 else:
-                    retries -= 1
                     log.critical(
                         f"Concat of chunks {working_dir} was finished prematurely"
                     )
-                    if retries == 0:
-                        log.critical(
-                            f"Concat of chunks {working_dir} was finished with errors"
-                        )
                     # Remove start_chunk_time and total_unit_size
                     # to continue processing from new chunk upon error
                     self.file_manager.reset_chunks(working_dir)
