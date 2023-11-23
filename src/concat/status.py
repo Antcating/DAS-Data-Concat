@@ -44,7 +44,7 @@ class FileManager:
             dtype=np.float32,
         )
 
-    def get_sorted_dirs(self) -> list:
+    def get_sorted_dirs(self) -> list[str]:
         """
         Returns a sorted list of dirs in the specified path, excl today's directory.
 
@@ -194,6 +194,12 @@ class FileManager:
             last_timestamp = 0
             return h5_files_list, start_chunk_time, last_timestamp
 
+        completed_filepath = os.path.join(self.path, filepath_r, ".completed")
+        if os.path.isfile(completed_filepath):
+            # If the directory is marked as completed, skip it
+            log.info(f"Skipping {filepath_r} as it is marked as completed")
+            return [], None, None
+
         status_filepath = os.path.join(self.path, filepath_r, ".last")
         if os.path.isfile(status_filepath):
             with open(status_filepath, "r", encoding="UTF-8") as status_file:
@@ -233,6 +239,10 @@ class FileManager:
             with open(status_filepath_r, "w", encoding="UTF-8") as status_file:
                 status_vars: dict = json.dump(status_vars, status_file)
         return True
+
+    def set_completed(self, working_dir: str):
+        with open(os.path.join(self.path, working_dir, ".completed"), "w") as f:
+            f.write("")
 
     def read_attrs(self, working_dir: str, filename: str = "attrs.json"):
         # Read attributes from json file from working dir
