@@ -4,7 +4,7 @@ from config import SAVE_PATH, config_dict
 
 # Create formatter
 formatter = logging.Formatter(
-    "%(asctime)s.%(msecs)03d | %(name)s | %(levelname)s | %(message)s",
+    "%(asctime)s.%(msecs)03d | %(levelname)s | %(funcName)s | %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 
