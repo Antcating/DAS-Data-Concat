@@ -31,9 +31,11 @@ class FileManager:
         # based on the chunk time provided in UNIX timestamp
         save_date_dt = datetime.datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
         save_date = datetime.datetime.strftime(save_date_dt, "%Y%m%d")
+        save_year = datetime.datetime.strftime(save_date_dt, "%Y")
         filename = save_date + "_" + str(chunk_time) + ".h5"
-
-        file = File(os.path.join(self.save_path, filename), "a")
+        if not os.path.isdir(os.path.join(self.save_path, save_year, save_date)):
+            os.makedirs(os.path.join(self.save_path, save_year, save_date))
+        file = File(os.path.join(self.save_path, save_year, save_date, filename), "a")
         log.debug(f"Provided chunk time: {chunk_time}. File: {filename} provided")
 
         return file.require_dataset(
