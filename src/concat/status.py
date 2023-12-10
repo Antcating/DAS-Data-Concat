@@ -6,7 +6,7 @@ from uu import Error
 import numpy as np
 import pytz
 
-from config import PATH, SAVE_PATH
+from config import PATH, SAVE_PATH, CHUNK_SIZE, SPS
 
 from log.main_logger import logger as log
 from h5py import File, Dataset
@@ -17,6 +17,10 @@ class FileManager:
         self.path = path
         self.save_path = save_path
 
+        self.h5_file = None
+        self.h5_dset = None
+        self.start_offset = 0
+
     def require_h5(self, chunk_time: float, space_samples: int) -> Dataset | None:
         """Creates/Checks h5 file
 
@@ -26,7 +30,6 @@ class FileManager:
         Returns:
             h5py.Dataset: Returns dataset of the created/checked h5 file
         """
-
         # Calculation of the date in YYYYMMDD format
         # based on the chunk time provided in UNIX timestamp
         save_date_dt = datetime.datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
@@ -35,16 +38,30 @@ class FileManager:
         filename = save_date + "_" + str(chunk_time) + ".h5"
         if not os.path.isdir(os.path.join(self.save_path, save_year, save_date)):
             os.makedirs(os.path.join(self.save_path, save_year, save_date))
-        file = File(os.path.join(self.save_path, save_year, save_date, filename), "a")
+        self.h5_file = File(
+            os.path.join(self.save_path, save_year, save_date, filename), "w"
+        )
         log.debug(f"Provided chunk time: {chunk_time}. File: {filename} provided")
-
-        return file.require_dataset(
+        self.h5_dset = self.h5_file.require_dataset(
             "data_down",
-            (space_samples, 0),
-            maxshape=(space_samples, None),
+            (space_samples, CHUNK_SIZE * SPS),
+            maxshape=(space_samples, CHUNK_SIZE * SPS),
             chunks=True,
             dtype=np.float32,
         )
+
+    def close_h5(self):
+        """Closes h5 file"""
+        if self.start_offset < SPS * CHUNK_SIZE:
+            self.h5_dset.resize(self.start_offset, axis=1)
+            log.info(f"Final shape of the dataset: {self.h5_dset.shape}")
+        self.h5_file.close()
+        self.h5_file = None
+        self.h5_dset = None
+
+    def reset_h5_offset(self):
+        """Resets h5 offset"""
+        self.start_offset = 0
 
     def get_sorted_dirs(self) -> list[str]:
         """
@@ -135,6 +152,7 @@ class FileManager:
                 "last_filename": last_filename,
                 "last_filedir": last_filedir_r,
                 "start_chunk_time": start_chunk_time,
+                "start_offset": self.start_offset,
             }
         )
 
@@ -147,6 +165,7 @@ class FileManager:
                 {
                     "last_filename": last_filename,
                     "last_filedir": last_filedir_r,
+                    "start_offset": self.start_offset,
                 }
             )
 
@@ -209,6 +228,7 @@ class FileManager:
                 last_filename = status_vars.get("last_filename")
                 last_filedir_r = status_vars.get("last_filedir")
                 start_chunk_time = status_vars.get("start_chunk_time")
+                self.start_offset = status_vars.get("start_offset")
 
             if start_chunk_time is not None:
                 file_names_tbd = self.get_sorted_h5_files(
