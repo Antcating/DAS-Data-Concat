@@ -277,5 +277,8 @@ class FileManager:
 
     def write_attrs(self, attrs: dict, working_dir: str):
         # Write attributes to json file in save dir
-        with open(os.path.join(self.save_path, working_dir + ".json"), "w") as f:
+        with open(
+            os.path.join(self.save_path, working_dir[:4], working_dir, "attrs.json"),
+            "w",
+        ) as f:
             json.dump(attrs, f)
