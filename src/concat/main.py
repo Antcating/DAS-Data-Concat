@@ -260,21 +260,10 @@ class Concatenator:
                 )
             )
 
-            # If time to split chunk to next day
-            if till_midnight < self.unit_size:
-                log.info(f"Splitting to next day: time till midnight {till_midnight}")
-                split_offset = int(SPS * till_midnight)
-
-                h5_file.dset_split = h5_file.dset[:split_offset, :]
-                # Creating carry to use in the next chunk
-                h5_file.dset_carry = h5_file.dset[split_offset:, :]
-
-                h5_file.is_day_end = True
-                h5_file.split_time = till_midnight
             # if end of the chunk is half of the packet
             # and is major or minor after major was skipped:
             # Split and take first half of the packet
-            elif (
+            if (
                 is_major or h5_unpack_error == "missing"
             ) and till_next_chunk < TIME_DIFF_THRESHOLD:
                 log.info(
@@ -288,6 +277,17 @@ class Concatenator:
 
                 h5_file.is_chunk_end = True
                 h5_file.split_time = till_next_chunk
+            # If time to split chunk to next day
+            elif till_midnight < self.unit_size:
+                log.info(f"Splitting to next day: time till midnight {till_midnight}")
+                split_offset = int(SPS * till_midnight)
+
+                h5_file.dset_split = h5_file.dset[:split_offset, :]
+                # Creating carry to use in the next chunk
+                h5_file.dset_carry = h5_file.dset[split_offset:, :]
+
+                h5_file.is_day_end = True
+                h5_file.split_time = till_midnight
             # Regular splitting within chunk otherwise
             else:
                 packet_diff = int(np.round(h5_file.packet_time - last_timestamp, 0))

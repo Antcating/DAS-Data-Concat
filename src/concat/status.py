@@ -42,16 +42,34 @@ class FileManager:
             os.path.join(self.save_path, save_year, save_date, filename), "w"
         )
         log.debug(f"Provided chunk time: {chunk_time}. File: {filename} provided")
-        self.h5_dset = self.h5_file.require_dataset(
-            "data_down",
-            (space_samples, CHUNK_SIZE * SPS),
-            maxshape=(space_samples, CHUNK_SIZE * SPS),
-            chunks=True,
-            dtype=np.float32,
-        )
+        try:
+            self.h5_dset = self.h5_file.require_dataset(
+                "data_down",
+                (space_samples, CHUNK_SIZE * SPS),
+                maxshape=(space_samples, CHUNK_SIZE * SPS),
+                chunks=True,
+                dtype=np.float32,
+            )
+        except OSError:
+            log.warning(f"File {filename} corrupted. Creating new file")
+            self.h5_file.close()
+            os.remove(os.path.join(self.save_path, save_year, save_date, filename))
+            self.h5_file = File(
+                os.path.join(self.save_path, save_year, save_date, filename), "w"
+            )
+            self.h5_dset = self.h5_file.require_dataset(
+                "data_down",
+                (space_samples, CHUNK_SIZE * SPS),
+                maxshape=(space_samples, CHUNK_SIZE * SPS),
+                chunks=True,
+                dtype=np.float32,
+            )
+            self.reset_h5_offset()
 
     def close_h5(self):
         """Closes h5 file"""
+        if self.h5_file is None:
+            return
         if self.start_offset < SPS * CHUNK_SIZE:
             self.h5_dset.resize(self.start_offset, axis=1)
             log.info(f"Final shape of the dataset: {self.h5_dset.shape}")

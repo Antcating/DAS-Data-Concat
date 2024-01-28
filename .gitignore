@@ -2,6 +2,7 @@
 __pycache__
 .vscode
 .venv
+.venv_concat
 .venv_dev
 # data and logs are ignored
 **.h5
@@ -11,3 +12,4 @@ log.**
 .log**
 # working files
 **.ipynb
+test/
