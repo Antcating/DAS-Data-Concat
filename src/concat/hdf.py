@@ -8,7 +8,7 @@ import pytz
 import h5py
 from os.path import join
 
-from config import PATH, DATA_LOSE_THRESHOLD
+from config import LOCAL_PATH, DATA_LOSE_THRESHOLD
 from log.main_logger import logger as log
 
 
@@ -20,7 +20,7 @@ class H5File:
     ) -> None:
         try:
             self.file = h5py.File(
-                join(PATH, file_dir, file_name), "r", rdcc_nbytes=2 * 1024 * 4
+                join(LOCAL_PATH, file_dir, file_name), "r", rdcc_nbytes=2 * 1024 * 4
             )
         except OSError as err:
             raise Exception(f"{file_dir + '/' + file_name} file is corrupted:", err)
