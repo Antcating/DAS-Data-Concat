@@ -6,14 +6,14 @@ from uu import Error
 import numpy as np
 import pytz
 
-from config import PATH, SAVE_PATH, SPS, CHUNK_SIZE
+from config import LOCAL_PATH, SAVE_PATH, SPS, CHUNK_SIZE
 
 from log.main_logger import logger as log
 from h5py import File, Dataset
 
 
 class FileManager:
-    def __init__(self, path: str = PATH, save_path: str = SAVE_PATH):
+    def __init__(self, path: str = LOCAL_PATH, save_path: str = SAVE_PATH):
         self.path = path
         self.save_path = save_path
 
@@ -29,6 +29,7 @@ class FileManager:
 
         # Calculation of the date in YYYYMMDD format
         # based on the chunk time provided in UNIX timestamp
+        chunk_time = round(chunk_time, 0)
         save_date_dt = datetime.datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
         save_date = datetime.datetime.strftime(save_date_dt, "%Y%m%d")
         save_year = datetime.datetime.strftime(save_date_dt, "%Y")
@@ -57,15 +58,12 @@ class FileManager:
         if os.path.isdir(filedir_abs):
             log.debug(f"Scanning {filedir_abs} for dirs except today's dir")
 
-            today_datetime: datetime.datetime = datetime.datetime.now(tz=datetime.UTC)
-            today_formatted: str = datetime.datetime.strftime(today_datetime, "%Y%m%d")
-
             return sorted(
                 [
                     dir
                     for dir in os.listdir(filedir_abs)
-                    if os.path.isdir(os.path.join(filedir_abs, dir))
-                    and dir != today_formatted
+                    # if os.path.isdir(os.path.join(filedir_abs, dir))
+                    # and dir != today_formatted
                 ]
             )
 
