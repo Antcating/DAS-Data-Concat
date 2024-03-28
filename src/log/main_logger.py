@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 from config import SAVE_PATH, config_dict
 
@@ -18,7 +19,9 @@ logger = logging.getLogger(__name__)
 logger.setLevel(LOG_LEVEL)
 
 # Create file handler
-file_handler = logging.FileHandler(os.path.join(SAVE_PATH, "log"))
+file_handler = RotatingFileHandler(
+    os.path.join(SAVE_PATH, "log"), maxBytes=100000000, backupCount=10
+)
 file_handler.setLevel(LOG_LEVEL)
 
 # Set formats and add the handlers to the logger

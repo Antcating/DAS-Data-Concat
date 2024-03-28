@@ -22,7 +22,7 @@ LOCALPATH = config_dict["PATH"]["LOCALPATH"]
 NASPATH_final = config_dict["PATH"]["NASPATH_final"]
 
 if isdir(LOCALPATH):
-    PATH = LOCALPATH
+    LOCAL_PATH = LOCALPATH
 else:
     raise Exception("PATH is not accessible!")
 if isdir(NASPATH_final):

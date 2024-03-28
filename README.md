@@ -35,4 +35,3 @@ Before running the project you have to configure parameters in the `config.ini` 
 `UNIT_SIZE` is length of the packet including redundancy (in second). By default 4
 `SPS` is expected time frequency after data downsamling (in Hz). By default 100. 
 `DX` is expected spatial spacing after data downsampling (in m). By default 9.6 
-`SPACE_SAMPLES` is expected space dimensions in matrix of the downsampled packet. Used in internal calculation. By default 1667.

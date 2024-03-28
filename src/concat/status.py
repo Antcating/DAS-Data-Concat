@@ -6,20 +6,16 @@ from uu import Error
 import numpy as np
 import pytz
 
-from config import PATH, SAVE_PATH, CHUNK_SIZE, SPS
+from config import LOCAL_PATH, SAVE_PATH, SPS, CHUNK_SIZE
 
 from log.main_logger import logger as log
 from h5py import File, Dataset
 
 
 class FileManager:
-    def __init__(self, path: str = PATH, save_path: str = SAVE_PATH):
+    def __init__(self, path: str = LOCAL_PATH, save_path: str = SAVE_PATH):
         self.path = path
         self.save_path = save_path
-
-        self.h5_file = None
-        self.h5_dset = None
-        self.start_offset = 0
 
     def require_h5(self, chunk_time: float, space_samples: int) -> Dataset | None:
         """Creates/Checks h5 file
@@ -30,56 +26,26 @@ class FileManager:
         Returns:
             h5py.Dataset: Returns dataset of the created/checked h5 file
         """
+
         # Calculation of the date in YYYYMMDD format
         # based on the chunk time provided in UNIX timestamp
+        chunk_time = round(chunk_time, 0)
         save_date_dt = datetime.datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
         save_date = datetime.datetime.strftime(save_date_dt, "%Y%m%d")
         save_year = datetime.datetime.strftime(save_date_dt, "%Y")
         filename = save_date + "_" + str(chunk_time) + ".h5"
         if not os.path.isdir(os.path.join(self.save_path, save_year, save_date)):
             os.makedirs(os.path.join(self.save_path, save_year, save_date))
-        self.h5_file = File(
-            os.path.join(self.save_path, save_year, save_date, filename), "w"
-        )
+        file = File(os.path.join(self.save_path, save_year, save_date, filename), "a")
         log.debug(f"Provided chunk time: {chunk_time}. File: {filename} provided")
-        try:
-            self.h5_dset = self.h5_file.require_dataset(
-                "data_down",
-                (space_samples, CHUNK_SIZE * SPS),
-                maxshape=(space_samples, CHUNK_SIZE * SPS),
-                chunks=True,
-                dtype=np.float32,
-            )
-        except OSError:
-            log.warning(f"File {filename} corrupted. Creating new file")
-            self.h5_file.close()
-            os.remove(os.path.join(self.save_path, save_year, save_date, filename))
-            self.h5_file = File(
-                os.path.join(self.save_path, save_year, save_date, filename), "w"
-            )
-            self.h5_dset = self.h5_file.require_dataset(
-                "data_down",
-                (space_samples, CHUNK_SIZE * SPS),
-                maxshape=(space_samples, CHUNK_SIZE * SPS),
-                chunks=True,
-                dtype=np.float32,
-            )
-            self.reset_h5_offset()
 
-    def close_h5(self):
-        """Closes h5 file"""
-        if self.h5_file is None:
-            return
-        if self.start_offset < SPS * CHUNK_SIZE:
-            self.h5_dset.resize(self.start_offset, axis=1)
-            log.info(f"Final shape of the dataset: {self.h5_dset.shape}")
-        self.h5_file.close()
-        self.h5_file = None
-        self.h5_dset = None
-
-    def reset_h5_offset(self):
-        """Resets h5 offset"""
-        self.start_offset = 0
+        return file.require_dataset(
+            "data_down",
+            (space_samples, 0),
+            maxshape=(space_samples, SPS * CHUNK_SIZE),  # Set maxshape to CHUNK_SIZE
+            chunks=True,
+            dtype=np.float32,
+        )
 
     def get_sorted_dirs(self) -> list[str]:
         """
@@ -92,15 +58,12 @@ class FileManager:
         if os.path.isdir(filedir_abs):
             log.debug(f"Scanning {filedir_abs} for dirs except today's dir")
 
-            today_datetime: datetime.datetime = datetime.datetime.now(tz=datetime.UTC)
-            today_formatted: str = datetime.datetime.strftime(today_datetime, "%Y%m%d")
-
             return sorted(
                 [
                     dir
                     for dir in os.listdir(filedir_abs)
-                    if os.path.isdir(os.path.join(filedir_abs, dir))
-                    and dir != today_formatted
+                    # if os.path.isdir(os.path.join(filedir_abs, dir))
+                    # and dir != today_formatted
                 ]
             )
 
@@ -170,7 +133,6 @@ class FileManager:
                 "last_filename": last_filename,
                 "last_filedir": last_filedir_r,
                 "start_chunk_time": start_chunk_time,
-                "start_offset": self.start_offset,
             }
         )
 
@@ -183,7 +145,6 @@ class FileManager:
                 {
                     "last_filename": last_filename,
                     "last_filedir": last_filedir_r,
-                    "start_offset": self.start_offset,
                 }
             )
 
@@ -191,6 +152,13 @@ class FileManager:
                 os.path.join(self.path, last_filedir_r, ".last"), "w", encoding="UTF-8"
             ) as status_file:
                 status_file.write(status_vars_n)
+
+        with open(
+            os.path.join(self.path, ".last_timestamp"), "w", encoding="UTF-8"
+        ) as status_file:
+            status_file.write(
+                str(last_filename.split("_")[-1].rsplit(".", maxsplit=1)[0])
+            )
 
     def get_queue(self, filepath_r: str):
         """
@@ -208,7 +176,7 @@ class FileManager:
                 - last_timestamp (int): The timestamp of the last file processed
         """
 
-        def set_defaults(last_filename: str = None) -> tuple:
+        def set_defaults(last_filename: str = None, last_timestamp: float = 0) -> tuple:
             """
             Sets default values for the variables used in get_queue
 
@@ -230,7 +198,6 @@ class FileManager:
                 if h5_files_list
                 else 0
             )
-            last_timestamp = 0
             return h5_files_list, start_chunk_time, last_timestamp
 
         completed_filepath = os.path.join(self.path, filepath_r, ".completed")
@@ -239,6 +206,13 @@ class FileManager:
             log.info(f"Skipping {filepath_r} as it is marked as completed")
             return [], None, None
 
+        last_timestamp_filepath = os.path.join(self.path, ".last_timestamp")
+        if os.path.isfile(last_timestamp_filepath):
+            with open(last_timestamp_filepath, "r", encoding="UTF-8") as status_file:
+                last_timestamp = float(status_file.read())
+        else:
+            last_timestamp = 0
+
         status_filepath = os.path.join(self.path, filepath_r, ".last")
         if os.path.isfile(status_filepath):
             with open(status_filepath, "r", encoding="UTF-8") as status_file:
@@ -246,18 +220,14 @@ class FileManager:
                 last_filename = status_vars.get("last_filename")
                 last_filedir_r = status_vars.get("last_filedir")
                 start_chunk_time = status_vars.get("start_chunk_time")
-                self.start_offset = status_vars.get("start_offset")
 
             if start_chunk_time is not None:
                 file_names_tbd = self.get_sorted_h5_files(
                     dir_path_r=last_filedir_r, last_filename=last_filename
                 )
-                last_timestamp = float(
-                    last_filename.split("_")[-1].rsplit(".", maxsplit=1)[0]
-                )
                 return file_names_tbd, start_chunk_time, last_timestamp
             else:
-                return set_defaults(last_filename)
+                return set_defaults(last_filename, last_timestamp)
         return set_defaults()
 
     def reset_chunks(self, file_dir_r: str) -> bool:
@@ -278,6 +248,9 @@ class FileManager:
 
             with open(status_filepath_r, "w", encoding="UTF-8") as status_file:
                 status_vars: dict = json.dump(status_vars, status_file)
+
+        if os.path.isfile(os.path.join(self.path, ".last_timestamp")):
+            os.remove(os.path.join(self.path, ".last_timestamp"))
         return True
 
     def set_completed(self, working_dir: str):
@@ -286,15 +259,21 @@ class FileManager:
 
     def read_attrs(self, working_dir: str, filename: str = "attrs.json"):
         # Read attributes from json file from working dir
+        print(os.path.exists(os.path.join(self.path, working_dir, filename)))
         try:
-            attrs = json.load(open(os.path.join(self.path, working_dir, filename), "r"))
-            self.write_attrs(attrs, working_dir)
+            with open(os.path.join(self.path, working_dir, filename), "r") as json_file:
+                attrs = json.load(fp=json_file)
+                self.write_attrs(attrs, working_dir)
             return attrs
         except FileNotFoundError:
+            print(os.path.join(self.path, working_dir, filename))
             raise Error(f"File {filename} not found in {working_dir}")
 
     def write_attrs(self, attrs: dict, working_dir: str):
         # Write attributes to json file in save dir
+        os.makedirs(
+            os.path.join(self.save_path, working_dir[:4], working_dir), exist_ok=True
+        )
         with open(
             os.path.join(self.save_path, working_dir[:4], working_dir, "attrs.json"),
             "w",
