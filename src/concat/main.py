@@ -114,6 +114,7 @@ class Concatenator:
                     dset_concat_from=h5_file.dset_carry, dset_concat_to=dset_concat
                 )
                 log.debug(f"New chunk concat shape: {dset_concat.shape}.")
+                h5_file.dset_carry = None
             if h5_file.is_day_end:
                 next_day_datetime = h5_file.packet_datetime + timedelta(days=1)
                 next_day_str = next_day_datetime.strftime("%Y%m%d")
@@ -177,6 +178,14 @@ class Concatenator:
             )
             h5_files_list.pop(-1)
             last_timestamp = last_file.packet_datetime.timestamp()
+
+            self.file_manager.save_status(
+                filedir_r=working_dir_r,
+                last_filename=last_file.file_name,
+                last_filedir_r=last_file.file_dir,
+                start_chunk_time=start_chunk_time,
+            )
+
         log.debug(f"Last timestamp: {last_timestamp}")
         while len(h5_files_list) > 0:
             if len(h5_files_list) > 1:
@@ -225,7 +234,7 @@ class Concatenator:
 
             # Calculates time till next day (for day splitting)
             start_day_datetime = next_file.packet_datetime.replace(
-                hour=0, minute=0, second=0
+                hour=0, minute=0, second=0, microsecond=0
             )
             next_day_datetime = start_day_datetime + timedelta(days=1)
 
@@ -249,7 +258,19 @@ class Concatenator:
             # and is major or minor after major was skipped:
             # Split and take first half of the packet
             log.debug(f"{(till_midnight, till_next_chunk)}")
-            if till_next_chunk < self.unit_size:
+
+            # If time to split chunk to next day
+            if till_midnight <= self.unit_size:
+                log.debug(f"Splitting to next day: time till midnight {till_midnight}")
+                split_offset = int(SPS * till_midnight)
+
+                next_file.dset_split = next_file.dset[:split_offset, :]
+                # Creating carry to use in the next chunk
+                next_file.dset_carry = next_file.dset[split_offset:, :]
+
+                next_file.is_day_end = True
+                next_file.split_time = till_midnight
+            elif till_next_chunk < self.unit_size:
                 log.debug(
                     f"Splitting to next chunk: time till next chunk {till_next_chunk}"
                 )
@@ -261,18 +282,6 @@ class Concatenator:
 
                 next_file.is_chunk_end = True
                 next_file.split_time = till_next_chunk
-
-            # If time to split chunk to next day
-            elif till_midnight <= self.unit_size:
-                log.debug(f"Splitting to next day: time till midnight {till_midnight}")
-                split_offset = int(SPS * till_midnight)
-
-                next_file.dset_split = next_file.dset[:split_offset, :]
-                # Creating carry to use in the next chunk
-                next_file.dset_carry = next_file.dset[split_offset:, :]
-
-                next_file.is_day_end = True
-                next_file.split_time = till_midnight
             # Regular splitting within chunk otherwise
             else:
                 packet_diff = int(np.round(next_file.packet_time - last_timestamp, 0))
@@ -289,7 +298,7 @@ class Concatenator:
                 h5_file=next_file,
                 start_chunk_time=start_chunk_time,
             )
-
+            log.debug(f"{next_file.file_name, next_file.packet_time, start_chunk_time}")
             last_timestamp = next_file.packet_time
             # Save updated status data
             self.file_manager.save_status(
