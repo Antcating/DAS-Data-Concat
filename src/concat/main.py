@@ -1,17 +1,18 @@
 from typing import Union, Tuple
 from datetime import datetime, timedelta
 import os
+import json
 
 import h5py
 import numpy as np
 import pytz
 
-from concat.status import FileManager
 from log.main_logger import logger as log
 from config import (
     CHUNK_SIZE,
     SPS,
     LOCAL_PATH,
+    SAVE_PATH,
 )
 
 
@@ -31,8 +32,6 @@ class Concatenator:
         self.unit_size = 0
         self.packet_size = 0
 
-        self.file_manager = FileManager()
-
         self.carry = None
         self.start_chunk_offset = None
         self.till_next_chunk = 0
@@ -46,6 +45,32 @@ class Concatenator:
         self.sps = 0
         self.time_seconds = 0
         self.restored = False
+
+    def read_attrs(self, working_dir: str, filename: str = "attrs.json"):
+        # Read attributes from json file from working dir
+        try:
+            with open(
+                os.path.join(LOCAL_PATH, working_dir, filename), "r"
+            ) as json_file:
+                attrs = json.load(fp=json_file)
+                self.write_attrs(attrs, working_dir)
+            return attrs
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"File {filename} not found in {working_dir}"
+            ) from e
+
+    def write_attrs(self, attrs: dict, working_dir: str):
+        # Write attributes to json file in save dir
+        os.makedirs(
+            os.path.join(SAVE_PATH, working_dir[:4], working_dir), exist_ok=True
+        )
+        with open(
+            os.path.join(SAVE_PATH, working_dir[:4], working_dir, "attrs.json"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            json.dump(attrs, f)
 
     def check_shape_consistency(self, data):
         if data.shape[0] != int(self.space_samples):
@@ -111,7 +136,7 @@ class Concatenator:
         return return_tuple
 
     def calculate_attrs(self, working_dir_r: str):
-        attrs = self.file_manager.read_attrs(working_dir_r)
+        attrs = self.read_attrs(working_dir_r)
 
         self.space_samples = int(
             np.ceil((attrs["index"][1] + 1) / attrs["down_factor_space"])
