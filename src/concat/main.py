@@ -47,18 +47,14 @@ class Concatenator:
         self.time_seconds = 0
         self.restored = False
 
-    def read_attrs(self, working_dir: str, filename: str = "attrs.json"):
+    def read_attrs(self, file_path: str):
         # Read attributes from json file from working dir
         try:
-            with open(
-                os.path.join(LOCAL_PATH, working_dir, filename), "r"
-            ) as json_file:
+            with open(os.path.join(LOCAL_PATH, file_path), "r") as json_file:
                 attrs = json.load(fp=json_file)
             return attrs
         except FileNotFoundError as e:
-            raise FileNotFoundError(
-                f"File {filename} not found in {working_dir}"
-            ) from e
+            raise FileNotFoundError(f"File {file_path} not found") from e
 
     def write_attrs(self, attrs: dict, working_dir: str, file_name: str = "attrs.json"):
         # Write attributes to json file in save dir
@@ -94,7 +90,9 @@ class Concatenator:
         return_tuple = (None, None, False)  # name, data, gap
         if len(h5_files_list) > 1:
             file_path = h5_files_list[-1]
-            self.calculate_attrs(file_path.rsplit("/", maxsplit=1)[0])
+            self.calculate_attrs(
+                file_path.replace(".h5", ".json").replace("das_SR_", "")
+            )
             log.debug("Processing file: %s", file_path)
             file_timestamp = float(file_path.split("_")[-1].rsplit(".", maxsplit=1)[0])
             data = h5py.File(os.path.join(LOCAL_PATH, file_path), "r")["data_down"][
@@ -124,7 +122,9 @@ class Concatenator:
 
         else:
             file_path = h5_files_list[-1]
-            self.calculate_attrs(file_path.rsplit("/", maxsplit=1)[0])
+            self.calculate_attrs(
+                file_path.replace(".h5", ".json").replace("das_SR_", "")
+            )
             log.debug("Last file: %s", file_path)
             h5_files_list.pop()
             data = h5py.File(os.path.join(LOCAL_PATH, file_path), "r")["data_down"][
@@ -135,8 +135,13 @@ class Concatenator:
 
         return return_tuple
 
-    def calculate_attrs(self, working_dir_r: str):
-        self.attrs = self.read_attrs(working_dir_r)
+    def calculate_attrs(self, file_path: str) -> None:
+        if os.path.exists(os.path.join(LOCAL_PATH, file_path)):
+            self.attrs = self.read_attrs(file_path)
+        else:
+            file_path = os.path.join(file_path.rsplit(os.sep, 1)[0], "attrs.json")
+            log.warning("Working in legacy mode. Loading attrs from %s", file_path)
+            self.attrs = self.read_attrs(file_path)
 
         self.space_samples = int(
             np.ceil((self.attrs["index"][1] + 1) / self.attrs["down_factor_space"])
@@ -204,7 +209,9 @@ class Concatenator:
         h5_files_list = h5_files_list[::-1]
 
         while len(h5_files_list) > 0:
-            self.calculate_attrs(h5_files_list[-1].rsplit("/", maxsplit=1)[0])
+            self.calculate_attrs(
+                h5_files_list[-1].replace(".h5", ".json").replace("das_SR_", "")
+            )
 
             if self.restored:
                 chunk_date = (
@@ -214,35 +221,39 @@ class Concatenator:
                 )
                 chunk_path = os.path.join("output", chunk_date, str(chunk_time) + ".h5")
                 log.debug("Loading chunk data from %s", chunk_path)
-                chunk_data: np.array = h5py.File(chunk_path, "r")["data_down"][()]
-                # Resize chunk to SPS * CHUNK_SIZE
-                chunk_data = np.hstack(
-                    (
-                        chunk_data,
-                        np.zeros(
-                            (
-                                self.space_samples,
-                                int((SPS * CHUNK_SIZE) - chunk_data.shape[1]),
+                try:
+                    chunk_data: np.array = h5py.File(chunk_path, "r")["data_down"][()]
+                    # Resize chunk to SPS * CHUNK_SIZE
+                    chunk_data = np.hstack(
+                        (
+                            chunk_data,
+                            np.zeros(
+                                (
+                                    self.space_samples,
+                                    int((SPS * CHUNK_SIZE) - chunk_data.shape[1]),
+                                ),
+                                dtype=np.float32,
                             ),
-                            dtype=np.float32,
-                        ),
+                        )
                     )
-                )
 
-                log.debug("Chunk data shape: %s", chunk_data.shape)
+                    log.debug("Chunk data shape: %s", chunk_data.shape)
 
-                next_day = (
-                    datetime.fromtimestamp(chunk_time, tz=pytz.UTC).replace(
-                        hour=0, minute=0, second=0, microsecond=0
-                    )
-                    + timedelta(days=1)
-                ).timestamp()
-                self.chunk_to_next_day = next_day - chunk_time
+                    next_day = (
+                        datetime.fromtimestamp(chunk_time, tz=pytz.UTC).replace(
+                            hour=0, minute=0, second=0, microsecond=0
+                        )
+                        + timedelta(days=1)
+                    ).timestamp()
+                    self.chunk_to_next_day = next_day - chunk_time
 
-                self.chunk_data_offset = chunk_data_offset
-                self.chunk_time = chunk_time
-                self.chunk_time_str = str(chunk_time)
-                self.new_chunk = False
+                    self.chunk_data_offset = chunk_data_offset
+                    self.chunk_time = chunk_time
+                    self.chunk_time_str = str(chunk_time)
+                    self.new_chunk = False
+                except FileNotFoundError as e:
+                    log.error("Restored chunk data not found, starting new chunk")
+                    raise FileNotFoundError("Restored chunk data not found") from e
                 self.restored = False
 
             else:
