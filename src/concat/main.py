@@ -42,6 +42,7 @@ class Concatenator:
         self.chunk_to_next_day = 0
         self.chunk_data_offset = 0
 
+        self.attrs = {}
         self.sps = 0
         self.time_seconds = 0
         self.restored = False
@@ -53,20 +54,19 @@ class Concatenator:
                 os.path.join(LOCAL_PATH, working_dir, filename), "r"
             ) as json_file:
                 attrs = json.load(fp=json_file)
-                self.write_attrs(attrs, working_dir)
             return attrs
         except FileNotFoundError as e:
             raise FileNotFoundError(
                 f"File {filename} not found in {working_dir}"
             ) from e
 
-    def write_attrs(self, attrs: dict, working_dir: str):
+    def write_attrs(self, attrs: dict, working_dir: str, file_name: str = "attrs.json"):
         # Write attributes to json file in save dir
         os.makedirs(
             os.path.join(SAVE_PATH, working_dir[:4], working_dir), exist_ok=True
         )
         with open(
-            os.path.join(SAVE_PATH, working_dir[:4], working_dir, "attrs.json"),
+            os.path.join(SAVE_PATH, working_dir[:4], working_dir, file_name),
             "w",
             encoding="utf-8",
         ) as f:
@@ -136,15 +136,17 @@ class Concatenator:
         return return_tuple
 
     def calculate_attrs(self, working_dir_r: str):
-        attrs = self.read_attrs(working_dir_r)
+        self.attrs = self.read_attrs(working_dir_r)
 
         self.space_samples = int(
-            np.ceil((attrs["index"][1] + 1) / attrs["down_factor_space"])
+            np.ceil((self.attrs["index"][1] + 1) / self.attrs["down_factor_space"])
         )
         self.time_samples = int(
-            np.ceil((attrs["index"][3] + 1) / attrs["down_factor_time"])
+            np.ceil((self.attrs["index"][3] + 1) / self.attrs["down_factor_time"])
         )
-        self.time_seconds = (attrs["index"][3] + 1) / (1000 / attrs["spacing"][1])
+        self.time_seconds = (self.attrs["index"][3] + 1) / (
+            1000 / self.attrs["spacing"][1]
+        )
         log.debug(
             "Space samples: %s, Time samples: %s", self.space_samples, self.time_samples
         )
@@ -355,14 +357,14 @@ class Concatenator:
                     - start_split_index,
                 ] = data[:, start_split_index:end_split_index]
                 self.chunk_data_offset += end_split_index - start_split_index
-                self.chunk_time_current = self.chunk_time + (
+                chunk_time_current = self.chunk_time + (
                     self.chunk_data_offset / self.sps
                 )
                 log.debug("Data shape: %s", chunk_data.shape)
                 log.debug("Time till next chunk: %s", self.till_next_chunk)
                 log.debug("Time till next day: %s", self.till_next_day)
                 log.debug("Chunk data offset: %s", self.chunk_data_offset)
-                log.debug("Chunk time current: %s", self.chunk_time_current)
+                log.debug("Chunk time current: %s", chunk_time_current)
                 log.debug("Is chunk stop: %s", is_chunk_stop)
 
                 if is_chunk_stop:
@@ -383,6 +385,11 @@ class Concatenator:
             h5py.File(os.path.join(save_path, self.chunk_time_str + ".h5"), "w")[
                 "data_down"
             ] = chunk_data
+            self.write_attrs(
+                self.attrs,
+                os.path.join("output", date),
+                self.chunk_time_str + "_attrs.json",
+            )
             if os.path.exists("last"):
                 os.remove("last")
                 log.debug("Removing last after saving chunk data")
