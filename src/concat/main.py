@@ -1,3 +1,4 @@
+"""Main module for concatenating H5 files into chunks."""
 from typing import Union, Tuple
 from datetime import datetime, timedelta
 import os
@@ -27,48 +28,58 @@ class Concatenator:
     """
 
     def __init__(self):
-        self.space_samples = 0
-        self.time_samples = 0
-        self.unit_size = 0
-        self.packet_size = 0
+        self.space_samples: int = 0
+        self.time_samples: int = 0
+        self.unit_size: int = 0
+        self.packet_size: int = 0
 
-        self.carry = None
-        self.start_chunk_offset = None
-        self.till_next_chunk = 0
-        self.new_chunk = False
-        self.chunk_time = 0
-        self.chunk_time_str = None
-        self.till_next_day = 0
-        self.chunk_to_next_day = 0
-        self.chunk_data_offset = 0
+        self.carry: Union[None, str] = None
+        self.start_chunk_offset: Union[None, int] = None
+        self.till_next_chunk: int = 0
+        self.new_chunk: bool = False
+        self.restored: bool = False
 
-        self.attrs = {}
-        self.sps = 0
-        self.time_seconds = 0
-        self.restored = False
+        self.chunk_time: float = 0
+        self.chunk_time_str: Union[None, str] = None
+        self.till_next_day: int = 0
+        self.chunk_to_next_day: int = 0
+        self.chunk_data_offset: int = 0
 
-    def read_attrs(self, file_path: str):
-        # Read attributes from json file from working dir
+        self.attrs: dict = {}
+        self.sps: int = 0
+        self.time_seconds: int = 0
+
+    def read_attrs(self, file_path: str) -> dict:
+        """Read attributes from json file from working dir.
+
+        Args:
+            file_path (str): Path to the json file.
+
+        Returns:
+            dict: Dictionary containing the attributes.
+        Raises:
+            FileNotFoundError: If the file is not found.
+        """
         try:
-            with open(os.path.join(LOCAL_PATH, file_path), "r") as json_file:
+            with open(
+                os.path.join(LOCAL_PATH, file_path), "r", encoding="utf-8"
+            ) as json_file:
                 attrs = json.load(fp=json_file)
             return attrs
         except FileNotFoundError as e:
             raise FileNotFoundError(f"File {file_path} not found") from e
 
-    def write_attrs(self, attrs: dict, working_dir: str, file_name: str = "attrs.json"):
-        # Write attributes to json file in save dir
-        os.makedirs(
-            os.path.join(SAVE_PATH, working_dir[:4], working_dir), exist_ok=True
-        )
-        with open(
-            os.path.join(SAVE_PATH, working_dir[:4], working_dir, file_name),
-            "w",
-            encoding="utf-8",
-        ) as f:
-            json.dump(attrs, f)
+    def check_shape_consistency(self, data: np.ndarray) -> bool:
+        """Check if the shape of the data is consistent with the expected shape.
 
-    def check_shape_consistency(self, data):
+        Args:
+            data (np.ndarray): The data to be checked.
+
+        Returns:
+            bool: True if the shape is consistent, False otherwise.
+        Raises:
+            ValueError: If the data has wrong shape.
+        """
         if data.shape[0] != int(self.space_samples):
             log.critical(
                 "Data has wrong shape: %s. Expected: %s, x",
@@ -85,7 +96,18 @@ class Concatenator:
             raise ValueError("Data has wrong shape")
         return True
 
-    def get_next_file_data(self, h5_files_list: list):
+    def get_next_file_data(
+        self, h5_files_list: list
+    ) -> Tuple[Union[str, None], Union[np.ndarray, None], bool]:
+        """Get the data from the next H5 file in the list.
+
+        Args:
+            h5_files_list (list): List of H5 file paths.
+
+        Returns:
+            tuple: A tuple containing the file name, data,
+                and a flag indicating if there is a gap between files.
+        """
         data: np.ndarray
         return_tuple = (None, None, False)  # name, data, gap
         if len(h5_files_list) > 1:
@@ -108,14 +130,14 @@ class Concatenator:
                 log.critical(
                     "Data has gap between %s and %s", file_path, next_file_name
                 )
-                h5_files_list.pop()
+                # h5_files_list.pop()
                 return_tuple = (file_path, data, True)
             else:
                 file_time_diff = int(np.round(next_file_timestamp - file_timestamp, 0))
                 split_before = int(SPS * file_time_diff)
                 log.debug("Splitting to next packet: packet diff %s", file_time_diff)
                 log.debug("Splitting to next packet: split before %s", split_before)
-                h5_files_list.pop()
+                # h5_files_list.pop()
                 return_tuple = (file_path, data[:, :split_before], False)
 
             # raise NotImplementedError("Not implemented yet")
@@ -126,7 +148,7 @@ class Concatenator:
                 file_path.replace(".h5", ".json").replace("das_SR_", "")
             )
             log.debug("Last file: %s", file_path)
-            h5_files_list.pop()
+            # h5_files_list.pop()
             data = h5py.File(os.path.join(LOCAL_PATH, file_path), "r")["data_down"][
                 ()
             ].T
@@ -136,6 +158,14 @@ class Concatenator:
         return return_tuple
 
     def calculate_attrs(self, file_path: str) -> None:
+        """Calculate the attributes based on the file path.
+
+        Args:
+            file_path (str): The file path.
+
+        Returns:
+            None
+        """
         if os.path.exists(os.path.join(LOCAL_PATH, file_path)):
             self.attrs = self.read_attrs(file_path)
         else:
@@ -157,19 +187,26 @@ class Concatenator:
         )
         self.sps = self.time_samples / self.time_seconds
 
-    def concat_files(self) -> Tuple[bool, Union[Exception, None]]:
-        """Main entry point to packet concatenation
+    def cut_chunk_to_size(self, chunk_data: np.ndarray) -> np.ndarray:
+        """Cut the chunk data to the specified offset.
 
         Args:
-            curr_dir (str): Currently processed directory
+            chunk_data (np.ndarray): The chunk data.
 
         Returns:
-            tuple[bool, Exception | None]: Returns bool status
-                If error, also returns error attrs.
+            np.ndarray: The cut chunk data.
         """
+        chunk_data = chunk_data[:, : self.chunk_data_offset]
+        return chunk_data
 
-        if os.path.exists("last"):
-            with open("last", "r", encoding="utf-8") as f:
+    def concat_files(self) -> Tuple[bool, Union[Exception, None]]:
+        """Main entry point to packet concatenation.
+
+        Returns:
+            tuple: containing the status (bool) and the error (Exception or None).
+        """
+        if os.path.exists(os.path.join(SAVE_PATH, "last")):
+            with open(os.path.join(SAVE_PATH, "last"), "r", encoding="utf-8") as f:
                 chunk_time, chunk_data_offset = [x.strip() for x in f.readlines()]
                 chunk_data_offset = int(chunk_data_offset)
                 chunk_time = float(chunk_time)
@@ -195,7 +232,6 @@ class Concatenator:
                 for file in sorted(
                     files, key=lambda x: int(x.split("_")[-1].split(".")[0])
                 ):
-                    # margin for several files upon restart
                     if (
                         file.endswith(".h5")
                         and float(file.split("_")[-1].split(".")[0])
@@ -210,16 +246,19 @@ class Concatenator:
 
         while len(h5_files_list) > 0:
             self.calculate_attrs(
-                h5_files_list[-1].replace(".h5", ".json").replace("das_SR_", "")
+                # TODO: Dynamic loading of prefix
+                h5_files_list[-1]
+                .replace(".h5", ".json")
+                .replace("das_SR_", "")
             )
 
             if self.restored:
-                chunk_date = (
-                    datetime.fromtimestamp(chunk_time, tz=pytz.UTC)
-                    .date()
-                    .strftime("%Y%m%d")
+                chunk_datetime = datetime.fromtimestamp(chunk_time, tz=pytz.UTC).date()
+                chunk_date = chunk_datetime.strftime("%Y%m%d")
+                chunk_year = chunk_datetime.strftime("%Y")
+                chunk_path = os.path.join(
+                    SAVE_PATH, chunk_year, chunk_date, str(chunk_time) + ".h5"
                 )
-                chunk_path = os.path.join("output", chunk_date, str(chunk_time) + ".h5")
                 log.debug("Loading chunk data from %s", chunk_path)
                 try:
                     chunk_data: np.array = h5py.File(chunk_path, "r")["data_down"][()]
@@ -275,6 +314,15 @@ class Concatenator:
                 self.till_next_chunk = CHUNK_SIZE - self.chunk_data_offset / self.sps
                 # Get next file data
                 name, data, is_chunk_stop = self.get_next_file_data(h5_files_list)
+                if data.shape[0] != chunk_data.shape[0]:
+                    log.warning(
+                        "Data shape mismatch: %s, %s",
+                        data.shape[0],
+                        chunk_data.shape[0],
+                    )
+                    log.debug("Creating new chunk data")
+                    chunk_data = self.cut_chunk_to_size(chunk_data)
+                    break
                 start_split_index = 0
                 end_split_index = data.shape[1]
                 if int(
@@ -310,6 +358,24 @@ class Concatenator:
                     self.chunk_to_next_day = next_day - self.chunk_time
                     self.chunk_time_str = str(self.chunk_time)
                     self.new_chunk = False
+
+                    date_datetime = datetime.fromtimestamp(
+                        self.chunk_time, tz=pytz.UTC
+                    ).date()
+                    year = date_datetime.strftime("%Y")
+                    date = date_datetime.strftime("%Y%m%d")
+                    if not os.path.exists(os.path.join(SAVE_PATH, year, date)):
+                        os.makedirs(os.path.join(SAVE_PATH, year, date))
+
+                    with open(
+                        os.path.join(
+                            SAVE_PATH, year, date, self.chunk_time_str + ".json"
+                        ),
+                        "w",
+                        encoding="utf-8",
+                    ) as f:
+                        json.dump(self.attrs, f)
+
                     log.debug("New chunk time: %s", self.chunk_time_str)
                 self.till_next_day = round(
                     self.chunk_to_next_day - self.chunk_data_offset / self.sps, 0
@@ -371,6 +437,8 @@ class Concatenator:
                 chunk_time_current = self.chunk_time + (
                     self.chunk_data_offset / self.sps
                 )
+
+                h5_files_list.pop()
                 log.debug("Data shape: %s", chunk_data.shape)
                 log.debug("Time till next chunk: %s", self.till_next_chunk)
                 log.debug("Time till next day: %s", self.till_next_day)
@@ -379,40 +447,37 @@ class Concatenator:
                 log.debug("Is chunk stop: %s", is_chunk_stop)
 
                 if is_chunk_stop:
-                    chunk_data = chunk_data[:, : self.chunk_data_offset]
+                    chunk_data = self.cut_chunk_to_size(chunk_data)
                     break
 
             # Save chunk data to h5 file
             log.debug("Saving chunk data to %s.h5", self.chunk_time_str)
-            date = (
-                datetime.fromtimestamp(float(self.chunk_time_str), tz=pytz.UTC)
-                .date()
-                .strftime("%Y%m%d")
-            )
-            save_path = os.path.join("output", date)
+            date_datetime = datetime.fromtimestamp(
+                float(self.chunk_time_str), tz=pytz.UTC
+            ).date()
+            year = date_datetime.strftime("%Y")
+            date = date_datetime.strftime("%Y%m%d")
+            save_path = os.path.join(SAVE_PATH, year, date)
             if not os.path.exists(save_path):
-                os.makedirs(os.path.join("output", date))
+                os.makedirs(os.path.join(SAVE_PATH, year, date))
 
             h5py.File(os.path.join(save_path, self.chunk_time_str + ".h5"), "w")[
                 "data_down"
             ] = chunk_data
-            self.write_attrs(
-                self.attrs,
-                os.path.join("output", date),
-                self.chunk_time_str + "_attrs.json",
-            )
-            if os.path.exists("last"):
-                os.remove("last")
+            if os.path.exists(os.path.join(SAVE_PATH, "last")):
+                os.remove(os.path.join(SAVE_PATH, "last"))
                 log.debug("Removing last after saving chunk data")
 
             if self.chunk_data_offset != SPS * CHUNK_SIZE:
-                with open(os.path.join("last"), "w", encoding="utf-8") as f:
+                log.debug("Chunk saved not full, saving last chunk data")
+                with open(os.path.join(SAVE_PATH, "last"), "w", encoding="utf-8") as f:
                     f.writelines(
                         [f"{self.chunk_time}\n", f"{self.chunk_data_offset}\n"]
                     )
-        return True
+        return
 
     def run(self):
+        """Main entry point to the concatenation process."""
         start_time = datetime.now(tz=pytz.UTC)
         self.concat_files()
         log.info("Finished in %s", datetime.now(tz=pytz.UTC) - start_time)
