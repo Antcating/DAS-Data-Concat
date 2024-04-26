@@ -10,8 +10,10 @@ import pytz
 
 from log.main_logger import logger as log
 from config import (
+    SYSTEM_NAME,
     CHUNK_SIZE,
     SPS,
+    DX,
     LOCAL_PATH,
     SAVE_PATH,
 )
@@ -23,14 +25,11 @@ class Concatenator:
     Attributes:
         space_samples (int): Number of space samples.
         time_samples (int): Number of time samples.
-        unit_size (int): Size of each unit.
     """
 
     def __init__(self):
         self.space_samples: int = 0
         self.time_samples: int = 0
-        self.unit_size: int = 0
-        self.packet_size: int = 0
 
         self.carry: Union[None, np.ndarray] = None
         self.old_carry: Union[None, np.ndarray] = None
@@ -46,7 +45,12 @@ class Concatenator:
 
         self.attrs: dict = {}
         self.sps: int = 0
+        self.dx: int = 0
         self.time_seconds: int = 0
+
+        self.system = None
+
+        self.run()
 
     def read_attrs(self, file_path: str) -> dict:
         """Read attributes from json file from working dir.
@@ -110,29 +114,22 @@ class Concatenator:
                 and a flag indicating if there is a gap between files.
         """
         data: np.ndarray
-        return_tuple = (None, None, False)  # name, data, gap
+        return_tuple = (None, None, None, False)  # name, data, gap
         if len(h5_files_list) > 1:
-            file_path = h5_files_list[-1]
-            self._calculate_attrs(
-                file_path.replace(".h5", ".json").replace("das_SR_", "")
-            )
-            log.debug("Checking file: %s", file_path)
-            file_timestamp = float(file_path.split("_")[-1].rsplit(".", maxsplit=1)[0])
-            data = h5py.File(os.path.join(LOCAL_PATH, file_path), "r")["data_down"][
-                ()
-            ].T
+            file_dir, file_name = h5_files_list[-1]
+            self._calculate_attrs(file_dir, file_name)
+            log.debug("Checking file: %s", file_name)
+            file_timestamp = self._get_file_timestamp(file_name)
+            data = self._read_data(file_dir, file_name)
             self._check_shape_consistency(data)
 
-            next_file_name = h5_files_list[-2]
-            next_file_timestamp = float(
-                next_file_name.split("_")[-1].rsplit(".", maxsplit=1)[0]
-            )
+            next_file_dir, next_file_name = h5_files_list[-2]
+            next_file_timestamp = self._get_file_timestamp(next_file_name)
             if np.round(next_file_timestamp - file_timestamp) > self.time_seconds:
                 log.critical(
-                    "Data has gap between %s and %s", file_path, next_file_name
+                    "Data has gap between %s and %s", file_name, next_file_name
                 )
-                # h5_files_list.pop()
-                return_tuple = (file_path, data, True)
+                return_tuple = (file_dir, file_name, data, True)
             else:
                 file_time_diff = int(np.round(next_file_timestamp - file_timestamp, 0))
                 split_before = int(SPS * file_time_diff)
@@ -143,27 +140,123 @@ class Concatenator:
                 )
                 data = data[:, :split_before]
                 log.debug("Data shape after cutting: %s", data.shape)
-                # h5_files_list.pop()
-                return_tuple = (file_path, data[:, :split_before], False)
-
-            # raise NotImplementedError("Not implemented yet")
+                return_tuple = (file_dir, file_name, data[:, :split_before], False)
 
         else:
-            file_path = h5_files_list[-1]
-            self._calculate_attrs(
-                file_path.replace(".h5", ".json").replace("das_SR_", "")
-            )
-            log.debug("Last file: %s", file_path)
-            # h5_files_list.pop()
-            data = h5py.File(os.path.join(LOCAL_PATH, file_path), "r")["data_down"][
-                ()
-            ].T
+            file_dir, file_name = h5_files_list[-1]
+            self._calculate_attrs(file_dir, file_name)
+            log.debug("Last file: %s", file_name)
+            data = self._read_data(file_dir, file_name)
             self._check_shape_consistency(data)
-            return_tuple = (file_path, data, True)
+            return_tuple = (file_dir, file_name, data, True)
 
         return return_tuple
 
-    def _calculate_attrs(self, file_path: str) -> None:
+    def _resample_data(self, data: np.ndarray) -> np.ndarray:
+        if self.sps / SPS >= 2:
+            time_down_factor = int(self.sps / SPS)
+            log.debug("Resampling time axis by factor %s", time_down_factor)
+            self.attrs["down_factor_time"] = time_down_factor
+            data = data.reshape(data.shape[0], -1, time_down_factor).mean(axis=-1)
+            self.attrs["prr_down"] = SPS
+            self.sps = SPS
+        if self.dx / DX >= 2:
+            space_down_factor = int(self.dx / DX)
+            log.debug("Resampling space axis by factor %s", space_down_factor)
+            self.attrs["down_factor_space"] = space_down_factor
+            data = data[:, ::space_down_factor]
+            self.attrs["dx_down"] = DX
+            self.dx = DX
+        return data
+
+    def _fill_attrs(self, file_name: str):
+        self.attrs["prr_down"] = SPS
+        self.attrs["dx"] = DX
+        self.attrs["length_seconds"] = self.time_seconds
+        self.attrs["spacing_down"] = [DX, 1000 / SPS, 1]
+        self.attrs["index_down"] = [
+            0,
+            self.space_samples - 1,
+            0,
+            self.time_samples - 1,
+            0,
+            0,
+        ]
+        self.attrs["packet_time_down"] = self._get_file_timestamp(file_name)
+
+    def _data_preprocess(self, data: np.ndarray, file_name: str) -> np.ndarray:
+        if SPS != self.sps or DX != self.dx:
+            log.debug("Resampling data")
+            data = self._resample_data(data)
+            log.debug("Data shape after resampling: %s", data.shape)
+        return data
+
+    def _read_data(self, file_dir: str, file_name: str) -> np.ndarray:
+        """Read the data from the H5 file.
+
+        Args:
+            file_path (str): The file path.
+
+        Returns:
+            np.ndarray: The data.
+        """
+        file_path = os.path.join(file_dir, file_name)
+        if self.system == "Mekorot":
+            data = h5py.File(os.path.join(LOCAL_PATH, file_path), "r")["data_down"][
+                ()
+            ].T
+        elif self.system == "Prisma":
+            with open(
+                os.path.join(LOCAL_PATH, file_path),
+                "rb",
+            ) as f:
+                f.seek(3714)
+                traces = np.frombuffer(f.read(2), dtype=np.int16)[0]
+            log.debug("Number of traces: %s", traces)
+            mmap_dtype = np.dtype(
+                # 240 bytes for the header, then the data
+                # source: https://www.igw.uni-jena.de/igwmedia/geophysik/pdf/seg-y-trace-header-format.pdf
+                [("headers", np.void, 240), ("data", "f4", traces)]
+            )
+            segy_data = np.memmap(
+                os.path.join(LOCAL_PATH, file_path),
+                dtype=mmap_dtype,
+                mode="r",
+                offset=3600,
+            )
+            log.debug("SEGY data shape: %s", segy_data["data"].shape)
+            data = segy_data["data"]
+
+        return self._data_preprocess(data, file_name)
+
+    def _save_chunk_data(self, chunk_data: np.ndarray) -> None:
+        log.info("Saving chunk data to %s.h5", self.chunk_time_str)
+        log.info("Chunk data shape: %s", chunk_data.shape)
+        date_datetime = datetime.fromtimestamp(
+            float(self.chunk_time_str), tz=pytz.UTC
+        ).date()
+        year = date_datetime.strftime("%Y")
+        date = date_datetime.strftime("%Y%m%d")
+        save_path = os.path.join(SAVE_PATH, year, date)
+        if not os.path.exists(save_path):
+            os.makedirs(os.path.join(SAVE_PATH, year, date))
+        file = h5py.File(os.path.join(save_path, self.chunk_time_str + ".h5"), "w")
+        file["data_down"] = chunk_data
+        for key, value in self.attrs.items():
+            if value is not None:
+                log.info("Saving %s: %s", key, value)
+                file.attrs[key] = value
+        if os.path.exists(os.path.join(SAVE_PATH, "last")):
+            os.remove(os.path.join(SAVE_PATH, "last"))
+            log.debug("Removing last after saving chunk data")
+
+        with open(os.path.join(SAVE_PATH, "last"), "w", encoding="utf-8") as f:
+            f.writelines([f"{self.chunk_time}\n", f"{self.chunk_data_offset}\n"])
+        if self.carry is not None:
+            log.debug("Saving carry data to carry file")
+            np.save(os.path.join(SAVE_PATH, "carry.npy"), self.carry)
+
+    def _calculate_attrs(self, file_dir, file_name) -> None:
         """Calculate the attributes based on the file path.
 
         Args:
@@ -172,38 +265,47 @@ class Concatenator:
         Returns:
             None
         """
-        log.debug("Calculating attrs for %s", file_path)
-        if os.path.exists(os.path.join(LOCAL_PATH, file_path)):
-            self.attrs = self.read_attrs(file_path)
-        else:
-            file_path = os.path.join(file_path.rsplit(os.sep, 1)[0], "attrs.json")
-            log.warning("Working in legacy mode. Loading attrs from %s", file_path)
-            self.attrs = self.read_attrs(file_path)
+        if self.system == "Mekorot":
+            file_path = (
+                os.path.join(file_dir, file_name)
+                .replace(".h5", ".json")
+                .replace("das_SR_", "")
+            )
+            log.debug("Calculating attrs for %s", file_path)
+            if os.path.exists(os.path.join(LOCAL_PATH, file_path)):
+                self.attrs = self.read_attrs(file_path)
+            else:
+                file_path = os.path.join(file_path.rsplit(os.sep, 1)[0], "attrs.json")
+                log.debug("Working in legacy mode. Loading attrs from %s", file_path)
+                self.attrs = self.read_attrs(file_path)
 
-        self.space_samples = int(
-            np.ceil((self.attrs["index"][1] + 1) / self.attrs["down_factor_space"])
-        )
-        self.time_samples = int(
-            np.ceil((self.attrs["index"][3] + 1) / self.attrs["down_factor_time"])
-        )
-        self.time_seconds = (self.attrs["index"][3] + 1) / (
-            1000 / self.attrs["spacing"][1]
-        )
+            self.space_samples = int(
+                np.ceil((self.attrs["index"][1] + 1) / self.attrs["down_factor_space"])
+            )
+            self.time_samples = int(
+                np.ceil((self.attrs["index"][3] + 1) / self.attrs["down_factor_time"])
+            )
+            self.time_seconds = (self.attrs["index"][3] + 1) / (
+                1000 / self.attrs["spacing"][1]
+            )
+            self.sps = self.time_samples / self.time_seconds
+            self.dx = self.attrs["spacing"][0] * self.attrs["down_factor_space"]
+        elif self.system == "Prisma":
+            file_path = os.path.join(file_dir, file_dir + "-info.json")
+            log.debug("Calculating attrs for %s", file_path)
+            self.attrs = self.read_attrs(file_path)
+            self.sps = self.attrs["prr"]
+            self.dx = self.attrs["dx"]
+            self.space_samples = self.attrs["numSamplesPerTrace"]
+            self.time_samples = int(self.attrs["numTraces"] / (self.sps / SPS))
+            self.time_seconds = self.time_samples / SPS
+
+        self._fill_attrs(file_name)
         log.debug("Expected data shape: %s, %s", self.space_samples, self.time_samples)
-        self.sps = self.time_samples / self.time_seconds
 
     def _cut_chunk_to_size(self, chunk_data: np.ndarray) -> np.ndarray:
-        """Cut the chunk data to the specified offset.
-
-        Args:
-            chunk_data (np.ndarray): The chunk data.
-
-        Returns:
-            np.ndarray: The cut chunk data.
-        """
         log.debug("Cutting chunk data to size %s", self.chunk_data_offset)
-        chunk_data = chunk_data[:, : self.chunk_data_offset]
-        return chunk_data
+        return chunk_data[:, : self.chunk_data_offset]
 
     def _get_previous_file_data(self):
         if os.path.exists(os.path.join(SAVE_PATH, "last")):
@@ -313,39 +415,88 @@ class Concatenator:
             chunk_data = self._allocate_empty_chunk()
         return chunk_data
 
-    def _get_file_list(self, previous_chunk_time, previous_chunk_data_offset):
-        today = datetime.now(tz=pytz.UTC).date().strftime("%Y%m%d")
+    def _get_files(self, previous_chunk_time, previous_chunk_data_offset):
         h5_files_list = []
-        dirs = [
-            dir
-            for dir in os.listdir(LOCAL_PATH)
-            if os.path.isdir(os.path.join(LOCAL_PATH, dir)) and dir != today
-        ]
+        if self.system == "Mekorot":
+            today = datetime.now(tz=pytz.UTC).date().strftime("%Y%m%d")
+            dirs = [
+                dir
+                for dir in os.listdir(LOCAL_PATH)
+                if os.path.isdir(os.path.join(LOCAL_PATH, dir)) and dir != today
+            ]
 
-        for dir_path in sorted(dirs):
-            for root, dirs, files in os.walk(os.path.join(LOCAL_PATH, dir_path)):
-                files = [file for file in files if file.endswith(".h5")]
-                for file in sorted(
-                    files, key=lambda x: int(x.split("_")[-1].split(".")[0])
-                ):
-                    if file.endswith(".h5") and float(
-                        file.split("_")[-1].rsplit(".", 1)[0]
-                    ) >= np.floor(previous_chunk_time) + (
-                        previous_chunk_data_offset / SPS
+            for dir_path in sorted(dirs):
+                for root, dirs, files in os.walk(os.path.join(LOCAL_PATH, dir_path)):
+                    files = [file for file in files if file.endswith(".h5")]
+                    for file in sorted(
+                        files, key=lambda x: int(x.split("_")[-1].split(".")[0])
                     ):
-                        h5_files_list.append(os.path.join(dir_path, file))
+                        if file.endswith(".h5") and float(
+                            file.split("_")[-1].rsplit(".", 1)[0]
+                        ) >= np.floor(previous_chunk_time) + (
+                            previous_chunk_data_offset / SPS
+                        ):
+                            h5_files_list.append([dir_path, file])
+        elif self.system == "Prisma":
+            today = datetime.now(tz=pytz.UTC).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            dirs = [
+                dir
+                for dir in os.listdir(LOCAL_PATH)
+                if (
+                    os.path.isdir(os.path.join(LOCAL_PATH, dir))
+                    and os.path.getmtime(os.path.join(LOCAL_PATH, dir))
+                    < today.timestamp()
+                )
+            ]
+
+            for dir_path in sorted(
+                dirs, key=lambda x: os.path.getmtime(os.path.join(LOCAL_PATH, x))
+            ):
+                for root, dirs, files in os.walk(os.path.join(LOCAL_PATH, dir_path)):
+                    files = [file for file in files if file.endswith(".segy")]
+                    for file in sorted(
+                        files, key=lambda x: self._get_file_timestamp(x)
+                    ):
+                        file_timestamp = self._get_file_timestamp(file)
+                        if file.endswith(".segy") and file_timestamp >= np.floor(
+                            previous_chunk_time
+                        ) + (previous_chunk_data_offset / SPS):
+                            h5_files_list.append([dir_path, file])
         # FIFO: reverse list
+        log.debug("Files to process: %s", len(h5_files_list))
         h5_files_list = h5_files_list[::-1]
         return h5_files_list
 
+    def _get_file_timestamp(self, file_name: str):
+        if self.system == "Mekorot":
+            file_timestamp = float(file_name.split("_")[-1].rsplit(".", 1)[0])
+        elif self.system == "Prisma":
+            file_datetime = datetime.strptime(
+                file_name.split(".")[0], "%Y-%m-%dT%H-%M-%S-%f"
+            )
+            file_datetime = pytz.timezone("Asia/Jerusalem").localize(file_datetime)
+            file_datetime_utc = file_datetime.astimezone(pytz.UTC)
+            file_timestamp = file_datetime_utc.timestamp()
+        else:
+            raise ValueError("System not supported")
+        return file_timestamp
+
     def _fill_chunk_data(
-        self, h5_files_list, chunk_data, previous_chunk_time, previous_chunk_data_offset
+        self,
+        h5_files_list: list,
+        chunk_data,
+        previous_chunk_time,
+        previous_chunk_data_offset,
     ):
         log.debug("Filling chunk data")
         while True:
-            self.till_next_chunk = CHUNK_SIZE - self.chunk_data_offset / self.sps
+            self.till_next_chunk = CHUNK_SIZE - self.chunk_data_offset / SPS
             # Get next file data
-            name, data, is_chunk_stop = self._get_next_packet_data(h5_files_list)
+            file_dir, file_name, data, is_chunk_stop = self._get_next_packet_data(
+                h5_files_list
+            )
             if data.shape[0] != chunk_data.shape[0]:
                 log.warning(
                     "Data shape mismatch: %s, %s",
@@ -360,10 +511,10 @@ class Concatenator:
                 self.chunk_time
                 + (self.chunk_data_offset / self.sps)
                 - self.time_seconds
-            ) >= int(name.split("_")[-1].rsplit(".")[0]):
-                log.debug("Skipping %s", name)
+            ) >= self._get_file_timestamp(file_name):
+                log.debug("Skipping %s", file_name)
                 continue
-            log.debug("Concatenating %s", name)
+            log.debug("Concatenating %s", file_name)
             if self.new_chunk:
                 if self.carry is not None:
                     log.debug("Previous time: %s", previous_chunk_time)
@@ -377,14 +528,12 @@ class Concatenator:
                     self.carry = None
                 else:
                     log.debug("Loaded time from packet name")
-                    self.chunk_time = float(
-                        name.split("_")[-1].rsplit(".", maxsplit=1)[0]
-                    )
+                    self.chunk_time = self._get_file_timestamp(file_name)
                 # Time drift correction
                 self.chunk_time = (
                     np.floor(self.chunk_time)
-                    + float(name.split("_")[-1].rsplit(".", maxsplit=1)[0])
-                    - np.floor(float(name.split("_")[-1].rsplit(".", maxsplit=1)[0]))
+                    + self._get_file_timestamp(file_name)
+                    - np.floor(self._get_file_timestamp(file_name))
                 )
 
                 next_day = (
@@ -406,7 +555,7 @@ class Concatenator:
                         "%Y-%m-%d %H:%M:%S"
                     ),
                 )
-                self.chunk_to_next_day = np.ceil(next_day - self.chunk_time)
+                self.chunk_to_next_day = np.round(next_day - self.chunk_time)
                 self.chunk_time_str = str(self.chunk_time)
                 self.new_chunk = False
 
@@ -418,25 +567,32 @@ class Concatenator:
                 if not os.path.exists(os.path.join(SAVE_PATH, year, date)):
                     os.makedirs(os.path.join(SAVE_PATH, year, date))
 
-                with open(
-                    os.path.join(SAVE_PATH, year, date, self.chunk_time_str + ".json"),
-                    "w",
-                    encoding="utf-8",
-                ) as f:
-                    json.dump(self.attrs, f)
+                # with open(
+                #     os.path.join(SAVE_PATH, year, date, self.chunk_time_str + ".json"),
+                #     "w",
+                #     encoding="utf-8",
+                # ) as f:
+                #     json.dump(self.attrs, f)
 
             self.till_next_day = round(
                 self.chunk_to_next_day - self.chunk_data_offset / self.sps, 0
             )
-            if round(self.chunk_time + (self.chunk_data_offset / self.sps)) > int(
-                name.split("_")[-1].rsplit(".")[0]
+            if (
+                np.round(
+                    self.chunk_time
+                    + (self.chunk_data_offset / self.sps)
+                    - self._get_file_timestamp(file_name)
+                )
+                >= 1
             ):
                 start_split_index = int(
                     self.sps
                     * (
-                        int(self.chunk_time)
-                        + (self.chunk_data_offset / self.sps)
-                        - int(name.split("_")[-1].rsplit(".")[0])
+                        np.round(
+                            self.chunk_time
+                            + (self.chunk_data_offset / self.sps)
+                            - self._get_file_timestamp(file_name)
+                        )
                     )
                 )
                 log.debug(
@@ -472,16 +628,27 @@ class Concatenator:
             log.debug("Data shape after split: %s", data.shape)
 
             if (
-                np.floor(
+                np.round(
                     self.chunk_time
                     + (self.chunk_data_offset / self.sps)
                     - (
-                        float(name.split("_")[-1].rsplit(".")[0])
-                        + start_split_index / self.sps
-                    )
+                        self._get_file_timestamp(file_name)
+                        + (start_split_index / self.sps)
+                    ),
+                    1,
                 )
-                != 0
+                > 0.5
             ):
+                log.debug("Time inconsistency between chunk and packet")
+                log.debug(
+                    "Chunk time: %s",
+                    self.chunk_time + (self.chunk_data_offset / self.sps),
+                )
+                log.debug(
+                    "Packet time: %s",
+                    self._get_file_timestamp(file_name) + start_split_index / self.sps,
+                )
+
                 raise ValueError("Inconsistency between chunk time and packet time")
 
             chunk_data[
@@ -505,7 +672,7 @@ class Concatenator:
                 break
         return chunk_data
 
-    def concat_files(self) -> Tuple[bool, Union[Exception, None]]:
+    def _concat_files(self) -> Tuple[bool, Union[Exception, None]]:
         """Main entry point to packet concatenation.
 
         Returns:
@@ -514,18 +681,17 @@ class Concatenator:
         previous_chunk_time, previous_chunk_data_offset = self._get_previous_file_data()
         # Getting all necessary environmental vars from status file (if exists)
         #  otherwise return default values
-        h5_files_list = self._get_file_list(
-            previous_chunk_time, previous_chunk_data_offset
-        )
+        h5_files_list = self._get_files(previous_chunk_time, previous_chunk_data_offset)
+
         if len(h5_files_list) == 0:
             log.warning("No new files found in %s", LOCAL_PATH)
             return
-        log.debug("Files to process: %s", len(h5_files_list))
-
         # Check if there is a gap between last chunk and first file
+        first_file_time = h5_files_list[-1][1]
+
         if self.carry is not None:
             time_diff = np.floor(
-                float(h5_files_list[-1].split("_")[-1].rsplit(".", 1)[0])
+                self._get_file_timestamp(first_file_time)
                 - float(
                     previous_chunk_time
                     + (previous_chunk_data_offset / SPS)
@@ -537,12 +703,7 @@ class Concatenator:
                 self.carry = None
 
         while len(h5_files_list) > 0:
-            self._calculate_attrs(
-                # TODO: Dynamic loading of prefix
-                h5_files_list[-1]
-                .replace(".h5", ".json")
-                .replace("das_SR_", "")
-            )
+            self._calculate_attrs(h5_files_list[-1][0], h5_files_list[-1][1])
 
             chunk_data = self._get_chunk_data(
                 previous_chunk_time, previous_chunk_data_offset
@@ -557,28 +718,7 @@ class Concatenator:
             # Cut chunk data to size
             chunk_data = self._cut_chunk_to_size(chunk_data)
             # Save chunk data to h5 file
-            log.debug("Saving chunk data to %s.h5", self.chunk_time_str)
-            date_datetime = datetime.fromtimestamp(
-                float(self.chunk_time_str), tz=pytz.UTC
-            ).date()
-            year = date_datetime.strftime("%Y")
-            date = date_datetime.strftime("%Y%m%d")
-            save_path = os.path.join(SAVE_PATH, year, date)
-            if not os.path.exists(save_path):
-                os.makedirs(os.path.join(SAVE_PATH, year, date))
-
-            h5py.File(os.path.join(save_path, self.chunk_time_str + ".h5"), "w")[
-                "data_down"
-            ] = chunk_data
-            if os.path.exists(os.path.join(SAVE_PATH, "last")):
-                os.remove(os.path.join(SAVE_PATH, "last"))
-                log.debug("Removing last after saving chunk data")
-
-            with open(os.path.join(SAVE_PATH, "last"), "w", encoding="utf-8") as f:
-                f.writelines([f"{self.chunk_time}\n", f"{self.chunk_data_offset}\n"])
-            if self.carry is not None:
-                log.debug("Saving carry data to carry file")
-                np.save(os.path.join(SAVE_PATH, "carry.npy"), self.carry)
+            self._save_chunk_data(chunk_data)
 
             previous_chunk_time = self.chunk_time
             previous_chunk_data_offset = self.chunk_data_offset
@@ -586,7 +726,10 @@ class Concatenator:
 
     def run(self):
         """Main entry point to the concatenation process."""
+        if SYSTEM_NAME not in ["Mekorot", "Prisma"]:
+            raise ValueError("System not supported")
+        self.system = SYSTEM_NAME
         start_time = datetime.now(tz=pytz.UTC)
         log.info("Starting concatenation at %s", start_time)
-        self.concat_files()
+        self._concat_files()
         log.info("Finished in %s", datetime.now(tz=pytz.UTC) - start_time)
