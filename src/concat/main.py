@@ -9,6 +9,7 @@ import numpy as np
 import pytz
 
 from log.main_logger import logger as log
+from concat.utils import multithreaded_mean
 from config import (
     SYSTEM_NAME,
     CHUNK_SIZE,
@@ -27,7 +28,7 @@ class Concatenator:
         time_samples (int): Number of time samples.
     """
 
-    def __init__(self):
+    def __init__(self, num_threads: int = 4):
         self.space_samples: int = 0
         self.time_samples: int = 0
 
@@ -49,6 +50,7 @@ class Concatenator:
         self.time_seconds: int = 0
 
         self.system = None
+        self.num_threads = num_threads
 
         self.run()
 
@@ -68,6 +70,7 @@ class Concatenator:
                 os.path.join(LOCAL_PATH, file_path), "r", encoding="utf-8"
             ) as json_file:
                 attrs = json.load(fp=json_file)
+
             return attrs
         except FileNotFoundError as e:
             raise FileNotFoundError(f"File {file_path} not found") from e
@@ -157,7 +160,14 @@ class Concatenator:
             time_down_factor = int(self.sps / SPS)
             log.debug("Resampling time axis by factor %s", time_down_factor)
             self.attrs["down_factor_time"] = time_down_factor
-            data = data.reshape(data.shape[0], -1, time_down_factor).mean(axis=-1)
+            data = data.reshape(data.shape[0], -1, time_down_factor).copy()
+
+            # data = multithreaded_mean(data, 10)
+            # data = np.mean(data, axis=-1, dtype=np.float32)
+            # data = np.sum(data, axis=-1, dtype=np.float32) / time_down_factor
+            # data = multithreaded_sum(data, self.num_threads) / time_down_factor
+            data = multithreaded_mean(data, self.num_threads)
+
             self.attrs["prr_down"] = SPS
             self.sps = SPS
         if self.dx / DX >= 2:
@@ -171,17 +181,8 @@ class Concatenator:
 
     def _fill_attrs(self, file_name: str):
         self.attrs["prr_down"] = SPS
-        self.attrs["dx"] = DX
-        self.attrs["length_seconds"] = self.time_seconds
-        self.attrs["spacing_down"] = [DX, 1000 / SPS, 1]
-        self.attrs["index_down"] = [
-            0,
-            self.space_samples - 1,
-            0,
-            self.time_samples - 1,
-            0,
-            0,
-        ]
+        self.attrs["dx_down"] = DX
+
         self.attrs["packet_time_down"] = self._get_file_timestamp(file_name)
 
     def _data_preprocess(self, data: np.ndarray, file_name: str) -> np.ndarray:
@@ -242,10 +243,8 @@ class Concatenator:
             os.makedirs(os.path.join(SAVE_PATH, year, date))
         file = h5py.File(os.path.join(save_path, self.chunk_time_str + ".h5"), "w")
         file["data_down"] = chunk_data
-        for key, value in self.attrs.items():
-            if value is not None:
-                log.info("Saving %s: %s", key, value)
-                file.attrs[key] = value
+
+        file.attrs.update(self.attrs)
         if os.path.exists(os.path.join(SAVE_PATH, "last")):
             os.remove(os.path.join(SAVE_PATH, "last"))
             log.debug("Removing last after saving chunk data")
@@ -703,6 +702,7 @@ class Concatenator:
                 self.carry = None
 
         while len(h5_files_list) > 0:
+            start_time = datetime.now(tz=pytz.UTC)
             self._calculate_attrs(h5_files_list[-1][0], h5_files_list[-1][1])
 
             chunk_data = self._get_chunk_data(
@@ -722,6 +722,9 @@ class Concatenator:
 
             previous_chunk_time = self.chunk_time
             previous_chunk_data_offset = self.chunk_data_offset
+            log.info(
+                "Chunk processing time: %s", datetime.now(tz=pytz.UTC) - start_time
+            )
         return
 
     def run(self):
