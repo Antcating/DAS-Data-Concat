@@ -6,10 +6,8 @@ config_dict.read("config.ini", encoding="UTF-8")
 
 #
 # CONCATENATION CHARACTERISTICS
-#
-# Difference between PACKET and SAVE times
-TIME_DIFF_THRESHOLD = float(config_dict["CONSTANTS"]["TIME_DIFF_THRESHOLD"])
-DATA_LOSE_THRESHOLD = int(config_dict["CONSTANTS"]["DATA_LOSE_THRESHOLD"])
+SYSTEM_NAME = config_dict["SYSTEM"]["NAME"]
+
 # Concatenated chunk size (in seconds)
 CHUNK_SIZE = int(config_dict["CONSTANTS"]["CONCAT_TIME"])
 
