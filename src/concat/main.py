@@ -432,7 +432,7 @@ class Concatenator:
             dirs = [
                 dir
                 for dir in os.listdir(LOCAL_PATH)
-                # if os.path.isdir(os.path.join(LOCAL_PATH, dir)) and dir != today
+                if os.path.isdir(os.path.join(LOCAL_PATH, dir)) and dir != today
             ]
 
             for dir_path in sorted(dirs):
