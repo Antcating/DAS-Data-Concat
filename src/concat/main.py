@@ -48,6 +48,7 @@ class Concatenator:
         self.sps: int = 0
         self.dx: int = 0
         self.time_seconds: int = 0
+        self.time_offset: float = 0
 
         self.system = None
         self.num_threads = num_threads
@@ -122,12 +123,16 @@ class Concatenator:
             file_dir, file_name = h5_files_list[-1]
             self._calculate_attrs(file_dir, file_name)
             log.debug("Checking file: %s", file_name)
-            file_timestamp = self._get_file_timestamp(file_name)
+            file_timestamp = self._get_file_timestamp(file_name, self.time_offset)
             data = self._read_data(file_dir, file_name)
             self._check_shape_consistency(data)
 
             next_file_dir, next_file_name = h5_files_list[-2]
-            next_file_timestamp = self._get_file_timestamp(next_file_name)
+            # It could be flawed to assume that offset is the same for the next file,
+            # but we will detect the problem (if it will occur) on the next iteration
+            next_file_timestamp = self._get_file_timestamp(
+                next_file_name, self.time_offset
+            )
             if np.round(next_file_timestamp - file_timestamp) > self.time_seconds:
                 log.critical(
                     "Data has gap between %s and %s", file_name, next_file_name
@@ -183,7 +188,9 @@ class Concatenator:
         self.attrs["prr_down"] = SPS
         self.attrs["dx_down"] = DX
 
-        self.attrs["packet_time_down"] = self._get_file_timestamp(file_name)
+        self.attrs["packet_time_down"] = self._get_file_timestamp(
+            file_name, self.time_offset
+        )
 
     def _data_preprocess(self, data: np.ndarray, file_name: str) -> np.ndarray:
         if SPS != self.sps or DX != self.dx:
@@ -287,7 +294,11 @@ class Concatenator:
             self.time_seconds = (self.attrs["index"][3] + 1) / (
                 1000 / self.attrs["spacing"][1]
             )
+
             self.sps = self.time_samples / self.time_seconds
+            # Time offset is written in ms, converting to s
+            self.time_offset = self.attrs["origin"][1] / 1000
+
             self.dx = self.attrs["spacing"][0] * self.attrs["down_factor_space"]
         elif self.system == "Prisma":
             file_path = os.path.join(file_dir, file_dir + "-info.json")
@@ -421,7 +432,7 @@ class Concatenator:
             dirs = [
                 dir
                 for dir in os.listdir(LOCAL_PATH)
-                if os.path.isdir(os.path.join(LOCAL_PATH, dir)) and dir != today
+                # if os.path.isdir(os.path.join(LOCAL_PATH, dir)) and dir != today
             ]
 
             for dir_path in sorted(dirs):
@@ -468,9 +479,9 @@ class Concatenator:
         h5_files_list = h5_files_list[::-1]
         return h5_files_list
 
-    def _get_file_timestamp(self, file_name: str):
+    def _get_file_timestamp(self, file_name: str, offset: float = 0.0):
         if self.system == "Mekorot":
-            file_timestamp = float(file_name.split("_")[-1].rsplit(".", 1)[0])
+            file_timestamp = float(file_name.split("_")[-1].rsplit(".", 1)[0]) + offset
         elif self.system == "Prisma":
             file_datetime = datetime.strptime(
                 file_name.split(".")[0], "%Y-%m-%dT%H-%M-%S-%f"
@@ -510,7 +521,7 @@ class Concatenator:
                 self.chunk_time
                 + (self.chunk_data_offset / self.sps)
                 - self.time_seconds
-            ) >= self._get_file_timestamp(file_name):
+            ) >= self._get_file_timestamp(file_name, self.time_offset):
                 log.debug("Skipping %s", file_name)
                 continue
             log.debug("Concatenating %s", file_name)
@@ -527,12 +538,14 @@ class Concatenator:
                     self.carry = None
                 else:
                     log.debug("Loaded time from packet name")
-                    self.chunk_time = self._get_file_timestamp(file_name)
+                    self.chunk_time = self._get_file_timestamp(
+                        file_name, self.time_offset
+                    )
                 # Time drift correction
                 self.chunk_time = (
                     np.floor(self.chunk_time)
-                    + self._get_file_timestamp(file_name)
-                    - np.floor(self._get_file_timestamp(file_name))
+                    + self._get_file_timestamp(file_name, self.time_offset)
+                    - np.floor(self._get_file_timestamp(file_name, self.time_offset))
                 )
 
                 next_day = (
@@ -580,7 +593,7 @@ class Concatenator:
                 np.round(
                     self.chunk_time
                     + (self.chunk_data_offset / self.sps)
-                    - self._get_file_timestamp(file_name)
+                    - self._get_file_timestamp(file_name, self.time_offset)
                 )
                 >= 1
             ):
@@ -590,7 +603,7 @@ class Concatenator:
                         np.round(
                             self.chunk_time
                             + (self.chunk_data_offset / self.sps)
-                            - self._get_file_timestamp(file_name)
+                            - self._get_file_timestamp(file_name, self.time_offset)
                         )
                     )
                 )
@@ -631,7 +644,7 @@ class Concatenator:
                     self.chunk_time
                     + (self.chunk_data_offset / self.sps)
                     - (
-                        self._get_file_timestamp(file_name)
+                        self._get_file_timestamp(file_name, self.time_offset)
                         + (start_split_index / self.sps)
                     ),
                     1,
@@ -645,7 +658,8 @@ class Concatenator:
                 )
                 log.debug(
                     "Packet time: %s",
-                    self._get_file_timestamp(file_name) + start_split_index / self.sps,
+                    self._get_file_timestamp(file_name, self.time_offset)
+                    + start_split_index / self.sps,
                 )
 
                 raise ValueError("Inconsistency between chunk time and packet time")
@@ -690,7 +704,7 @@ class Concatenator:
 
         if self.carry is not None:
             time_diff = np.floor(
-                self._get_file_timestamp(first_file_time)
+                self._get_file_timestamp(first_file_time, self.time_offset)
                 - float(
                     previous_chunk_time
                     + (previous_chunk_data_offset / SPS)
