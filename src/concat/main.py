@@ -191,6 +191,8 @@ class Concatenator:
         self.attrs["packet_time_down"] = self._get_file_timestamp(
             file_name, self.time_offset
         )
+        if self.time_offset != 0:
+            self.attrs["_offset"] = self.time_offset
 
     def _data_preprocess(self, data: np.ndarray, file_name: str) -> np.ndarray:
         if SPS != self.sps or DX != self.dx:
